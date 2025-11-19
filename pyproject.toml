@@ -1,0 +1,13 @@
+[project]
+name = "fastapi-opentaberna"
+version = "0.1.0"
+description = "FastAPI by the OpenTaberna Project"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "authlib>=1.6.5",
+    "cryptography>=46.0.3",
+    "fastapi>=0.121.3",
+    "python-keycloak>=5.8.1",
+    "uvicorn>=0.38.0",
+]
