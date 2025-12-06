@@ -8,6 +8,8 @@ dependencies = [
     "authlib>=1.6.5",
     "cryptography>=46.0.3",
     "fastapi>=0.121.3",
+    "pytest>=9.0.1",
     "python-keycloak>=5.8.1",
+    "ruff>=0.14.8",
     "uvicorn>=0.38.0",
 ]
