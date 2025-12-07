@@ -8,8 +8,9 @@ import os
 from pathlib import Path
 from typing import Dict, Optional
 
+from app.shared.config.enums import Environment
+
 from .config import LoggerConfig
-from .enums import Environment
 from .logger import AppLogger
 
 

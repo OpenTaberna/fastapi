@@ -9,8 +9,10 @@ import logging
 import time
 from contextlib import contextmanager
 
+from app.shared.config.enums import Environment
+
 from .config import LoggerConfig
-from .enums import Environment, LogLevel
+from .enums import LogLevel
 from .filters import SensitiveDataFilter
 from .formatters import ConsoleFormatter, JSONFormatter
 from .interfaces import ILogFilter

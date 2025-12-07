@@ -7,10 +7,12 @@ Configuration depends on abstractions (interfaces), not concrete implementations
 from pathlib import Path
 from typing import List, Optional
 
-from .enums import Environment, LogLevel
-from .interfaces import ILogFilter, ILogHandler
+from app.shared.config.enums import Environment
+
+from .enums import LogLevel
 from .filters import SensitiveDataFilter
 from .handlers import ConsoleHandler, DailyRotatingFileHandler, FileHandler
+from .interfaces import ILogFilter, ILogHandler
 
 
 class LoggerConfig:

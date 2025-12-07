@@ -31,7 +31,9 @@ from .context import LogContext, setup_request_logging
 from .config import LoggerConfig
 
 # Enums
-from .enums import LogLevel, Environment
+from app.shared.config.enums import Environment
+
+from .enums import LogLevel
 
 # Interfaces (for custom implementations)
 from .interfaces import ILogFormatter, ILogFilter, ILogHandler
