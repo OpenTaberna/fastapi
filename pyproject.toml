@@ -5,14 +5,18 @@ description = "FastAPI by the OpenTaberna Project"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.17.2",
+    "asyncpg>=0.31.0",
     "authlib>=1.6.5",
     "cryptography>=46.0.3",
     "fastapi>=0.124.0",
     "pydantic-settings>=2.12.0",
     "pydantic>=2.12.5",
+    "pytest-asyncio>=1.3.0",
     "pytest>=9.0.2",
     "python-dotenv>=1.2.1",
     "python-keycloak>=5.8.1",
     "ruff>=0.14.8",
+    "sqlalchemy[asyncio]>=2.0.44",
     "uvicorn>=0.38.0",
 ]
