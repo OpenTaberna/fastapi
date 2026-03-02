@@ -14,10 +14,10 @@ services:
       context: .
       dockerfile: src/Dockerfile
     image: opentaberna-api:latest
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8001
     env_file: .env
-    expose:
-      - "8000"
+    ports:
+      - "8001:8001"
     networks:
       frontproxy_fnet:
         ipv4_address: 172.20.20.21
