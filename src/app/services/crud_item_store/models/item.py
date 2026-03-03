@@ -271,23 +271,3 @@ class ItemUpdate(BaseModel):
     def validate_slug(cls, v: str | None) -> str | None:
         """Ensure slug is lowercase and URL-friendly."""
         return v.lower().strip() if v else None
-
-
-class ItemResponse(ItemBase):
-    """Schema for item API responses."""
-
-    uuid: UUID = Field(..., description="Unique item identifier")
-    created_at: datetime = Field(..., description="Item creation timestamp")
-    updated_at: datetime = Field(..., description="Last update timestamp")
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class ItemListResponse(BaseModel):
-    """Schema for paginated item list responses."""
-
-    items: list[ItemResponse] = Field(..., description="List of items")
-    total: int = Field(..., description="Total number of items", ge=0)
-    page: int = Field(..., description="Current page number", ge=1)
-    page_size: int = Field(..., description="Items per page", ge=1, le=100)
-    total_pages: int = Field(..., description="Total number of pages", ge=0)

@@ -2,6 +2,7 @@
 Item Store Models Package
 
 Exports all Pydantic models and database models for the item-store service.
+Response models are in the responses/ directory.
 """
 
 from .database import ItemDB
@@ -12,8 +13,6 @@ from .item import (
     InventoryModel,
     ItemBase,
     ItemCreate,
-    ItemListResponse,
-    ItemResponse,
     ItemStatus,
     ItemUpdate,
     MediaModel,
@@ -34,8 +33,6 @@ __all__ = [
     "ItemBase",
     "ItemCreate",
     "ItemUpdate",
-    "ItemResponse",
-    "ItemListResponse",
     # Nested Models
     "PriceModel",
     "MediaModel",

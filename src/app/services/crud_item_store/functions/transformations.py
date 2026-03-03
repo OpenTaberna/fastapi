@@ -6,8 +6,9 @@ Functions for converting between different item representations.
 
 from uuid import UUID
 
-from ..models import ItemResponse, ItemStatus
+from ..models import ItemStatus
 from ..models.database import ItemDB
+from ..responses import ItemResponse
 
 
 def db_to_response(item: ItemDB) -> ItemResponse:
