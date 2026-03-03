@@ -10,7 +10,7 @@ import pytest
 import requests
 
 # API base URL - adjust if your API is on a different host/port
-API_BASE_URL = "http://172.20.20.21:8001/api/v1/items"
+API_BASE_URL = "http://172.20.20.21:8001/v1/items"
 
 
 @pytest.fixture
