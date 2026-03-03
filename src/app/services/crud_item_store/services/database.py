@@ -170,42 +170,6 @@ class ItemRepository(BaseRepository[ItemDB]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none() is not None
 
-    async def sku_exists(self, sku: str, exclude_uuid: Optional[UUID] = None) -> bool:
-        """
-        Check if SKU already exists.
-
-        This is a convenience wrapper around field_exists() for better readability.
-
-        Args:
-            sku: SKU to check
-            exclude_uuid: Optionally exclude an item UUID (for updates)
-
-        Returns:
-            True if SKU exists, False otherwise
-
-        Example:
-            >>> exists = await repo.sku_exists("CHAIR-RED-001")
-        """
-        return await self.field_exists("sku", sku, exclude_uuid)
-
-    async def slug_exists(self, slug: str, exclude_uuid: Optional[UUID] = None) -> bool:
-        """
-        Check if slug already exists.
-
-        This is a convenience wrapper around field_exists() for better readability.
-
-        Args:
-            slug: Slug to check
-            exclude_uuid: Optionally exclude an item UUID (for updates)
-
-        Returns:
-            True if slug exists, False otherwise
-
-        Example:
-            >>> exists = await repo.slug_exists("red-wooden-chair")
-        """
-        return await self.field_exists("slug", slug, exclude_uuid)
-
 
 def get_item_repository(session: AsyncSession) -> ItemRepository:
     """
