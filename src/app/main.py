@@ -1,11 +1,14 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.services.crud_item_store import router as item_store_router
 from app.shared.database.base import Base
 from app.shared.database.engine import close_database, get_engine, init_database
+from app.shared.exceptions import AppException
+from app.shared.responses import ErrorResponse
 
 
 @asynccontextmanager
@@ -23,6 +26,22 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="OpenTaberna API", lifespan=lifespan)
+
+
+# Global exception handler for AppException
+@app.exception_handler(AppException)
+async def app_exception_handler(request: Request, exc: AppException) -> JSONResponse:
+    """
+    Handle all AppException instances and convert them to HTTP responses.
+
+    The ErrorResponse.from_exception method automatically maps error categories
+    to appropriate HTTP status codes (404, 422, 401, 403, 400, 500, 502).
+    """
+    error_response = ErrorResponse.from_exception(exc)
+    return JSONResponse(
+        status_code=error_response.status_code,
+        content=error_response.model_dump(mode="json"),
+    )
 
 
 origins = ["*"]  # Consider restricting this in a production environment
