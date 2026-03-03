@@ -133,11 +133,10 @@ class TestItemCRUD:
         assert response.status_code == 200
         data = response.json()
         assert "items" in data
-        assert "total" in data
-        assert "page" in data
-        assert "page_size" in data
-        assert data["total"] >= 1
+        assert "page_info" in data
+        assert data["page_info"]["total"] >= 1
         assert isinstance(data["items"], list)
+        assert data["success"] is True
 
     def test_list_items_pagination(self, created_item):
         """Test pagination parameters."""
@@ -145,7 +144,7 @@ class TestItemCRUD:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["page_size"] == 10
+        assert data["page_info"]["size"] == 10
         assert len(data["items"]) <= 10
 
     def test_update_item(self, created_item):
