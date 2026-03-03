@@ -20,18 +20,18 @@ async def check_duplicate_field(
     """
     Check if a field value already exists and raise exception if duplicate found.
 
-    This is a meta function that can check any field for duplicates by dispatching
-    to the appropriate repository method.
+    This is a meta function that can check any field for duplicates using the
+    repository's generic field_exists() method.
 
     Args:
         repo: Item repository instance
-        field_name: Name of the field to check (e.g., "sku", "slug")
+        field_name: Name of the field to check (e.g., "sku", "slug", "name")
         field_value: Value to check for duplicates
         exclude_uuid: Optional UUID to exclude from the check (for updates)
 
     Raises:
         ValidationError: If duplicate is found (via duplicate_entry helper)
-        ValueError: If field_name is not supported for duplicate checking
+        ValueError: If field_name is not a valid model field
 
     Examples:
         >>> # Check for duplicate SKU
@@ -39,22 +39,13 @@ async def check_duplicate_field(
         
         >>> # Check for duplicate slug, excluding current item
         >>> await check_duplicate_field(repo, "slug", "red-chair", exclude_uuid=item_uuid)
+        
+        >>> # Can check any field on the model
+        >>> await check_duplicate_field(repo, "name", "Test Product")
     """
-    # Map field names to repository methods
-    field_checks = {
-        "sku": repo.sku_exists,
-        "slug": repo.slug_exists,
-    }
-
-    if field_name not in field_checks:
-        raise ValueError(
-            f"Duplicate check not implemented for field: {field_name}. "
-            f"Supported fields: {', '.join(field_checks.keys())}"
-        )
-
-    # Call the appropriate repository method
-    exists_method = field_checks[field_name]
-    exists = await exists_method(field_value, exclude_uuid=exclude_uuid)
+    # Use the repository's generic field_exists method
+    # This will raise ValueError if field doesn't exist on the model
+    exists = await repo.field_exists(field_name, field_value, exclude_uuid=exclude_uuid)
 
     if exists:
         raise duplicate_entry("Item", field_name, field_value)
