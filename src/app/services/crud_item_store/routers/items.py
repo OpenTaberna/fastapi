@@ -15,6 +15,14 @@ from app.shared.exceptions import entity_not_found
 from app.shared.responses import PaginatedResponse, PageInfo
 from ..models import ItemCreate, ItemStatus, ItemUpdate
 from ..responses import ItemResponse
+from ..responses.docs import (
+    CREATE_ITEM_RESPONSES,
+    GET_ITEM_RESPONSES,
+    LIST_ITEMS_RESPONSES,
+    GET_ITEM_BY_SLUG_RESPONSES,
+    UPDATE_ITEM_RESPONSES,
+    DELETE_ITEM_RESPONSES,
+)
 from ..services import get_item_repository
 from ..functions import (
     db_to_response,
@@ -33,6 +41,7 @@ router = APIRouter()
     status_code=status.HTTP_201_CREATED,
     summary="Create a new item",
     description="Create a new item in the store with all required information.",
+    responses=CREATE_ITEM_RESPONSES,
 )
 async def create_item(
     item: ItemCreate,
@@ -46,10 +55,12 @@ async def create_item(
         session: Database session
 
     Returns:
-        Created item
+        ItemResponse: Created item with UUID and timestamps
 
     Raises:
-        ValidationError: If SKU or slug already exists
+        ValidationError (422): If SKU or slug already exists
+        RequestValidationError (422): If input data is invalid (wrong types, missing fields, constraint violations)
+        DatabaseError (500): If database operation fails
     """
     repo = get_item_repository(session)
 
@@ -84,6 +95,7 @@ async def create_item(
     response_model=ItemResponse,
     summary="Get item by UUID",
     description="Retrieve a single item by its UUID.",
+    responses=GET_ITEM_RESPONSES,
 )
 async def get_item(
     item_uuid: UUID,
@@ -97,10 +109,12 @@ async def get_item(
         session: Database session
 
     Returns:
-        Item details
+        ItemResponse: Item details
 
     Raises:
-        NotFoundError: If item not found
+        NotFoundError (404): If item with given UUID does not exist
+        RequestValidationError (422): If UUID format is invalid
+        DatabaseError (500): If database operation fails
     """
     repo = get_item_repository(session)
     item = await repo.get(item_uuid)
@@ -116,6 +130,7 @@ async def get_item(
     response_model=PaginatedResponse[ItemResponse],
     summary="List items",
     description="List items with pagination and optional filtering by status.",
+    responses=LIST_ITEMS_RESPONSES,
 )
 async def list_items(
     skip: int = Query(0, ge=0, description="Number of items to skip"),
@@ -131,13 +146,17 @@ async def list_items(
     List items with pagination.
 
     Args:
-        skip: Number of items to skip
-        limit: Maximum items to return
-        status_filter: Optional status filter
+        skip: Number of items to skip (must be >= 0)
+        limit: Maximum items to return (1-100)
+        status_filter: Optional status filter ('draft', 'active', or 'archived')
         session: Database session
 
     Returns:
-        Paginated list of items with page info
+        PaginatedResponse[ItemResponse]: Paginated list of items with metadata
+
+    Raises:
+        RequestValidationError (422): If skip < 0, limit out of range, or invalid status
+        DatabaseError (500): If database operation fails
     """
     repo = get_item_repository(session)
 
@@ -171,6 +190,7 @@ async def list_items(
     response_model=ItemResponse,
     summary="Get item by slug",
     description="Retrieve a single item by its URL-friendly slug.",
+    responses=GET_ITEM_BY_SLUG_RESPONSES,
 )
 async def get_item_by_slug(
     slug: str,
@@ -180,14 +200,15 @@ async def get_item_by_slug(
     Get item by slug.
 
     Args:
-        slug: Item slug
+        slug: Item slug (URL-friendly identifier)
         session: Database session
 
     Returns:
-        Item details
+        ItemResponse: Item details
 
     Raises:
-        NotFoundError: If item not found
+        NotFoundError (404): If item with given slug does not exist
+        DatabaseError (500): If database operation fails
     """
     repo = get_item_repository(session)
     item = await repo.get_by_slug(slug)
@@ -203,6 +224,7 @@ async def get_item_by_slug(
     response_model=ItemResponse,
     summary="Update item",
     description="Update an existing item. Only provided fields will be updated.",
+    responses=UPDATE_ITEM_RESPONSES,
 )
 async def update_item(
     item_uuid: UUID,
@@ -214,15 +236,17 @@ async def update_item(
 
     Args:
         item_uuid: Item UUID
-        item_update: Fields to update
+        item_update: Fields to update (only provided fields will be updated)
         session: Database session
 
     Returns:
-        Updated item
+        ItemResponse: Updated item
 
     Raises:
-        NotFoundError: If item not found
-        ValidationError: If SKU or slug conflicts
+        NotFoundError (404): If item with given UUID does not exist
+        ValidationError (422): If updated SKU or slug conflicts with another item
+        RequestValidationError (422): If UUID format or input data is invalid
+        DatabaseError (500): If database operation fails
     """
     repo = get_item_repository(session)
     item = await repo.get(item_uuid)
@@ -249,6 +273,7 @@ async def update_item(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete item",
     description="Permanently delete an item from the store.",
+    responses=DELETE_ITEM_RESPONSES,
 )
 async def delete_item(
     item_uuid: UUID,
@@ -262,7 +287,9 @@ async def delete_item(
         session: Database session
 
     Raises:
-        NotFoundError: If item not found
+        NotFoundError (404): If item with given UUID does not exist
+        RequestValidationError (422): If UUID format is invalid
+        DatabaseError (500): If database operation fails
     """
     repo = get_item_repository(session)
     item = await repo.get(item_uuid)
