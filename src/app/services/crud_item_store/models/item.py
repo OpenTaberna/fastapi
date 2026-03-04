@@ -5,10 +5,21 @@ This module defines all Pydantic models for the item-store service.
 """
 
 from enum import Enum
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, BeforeValidator, Field
+
+
+# ============================================================================
+# Type Annotations
+# ============================================================================
+
+
+NormalizedSlug = Annotated[
+    str, BeforeValidator(lambda v: v.lower().strip() if v else v)
+]
+UpperCaseStr = Annotated[str, BeforeValidator(lambda v: v.upper() if v else v)]
 
 
 # ============================================================================
@@ -77,7 +88,7 @@ class PriceModel(BaseModel):
     amount: int = Field(
         ..., description="Price in smallest currency unit (e.g., cents)", ge=0
     )
-    currency: str = Field(
+    currency: UpperCaseStr = Field(
         ..., min_length=3, max_length=3, description="ISO 4217 currency code"
     )
     includes_tax: bool = Field(default=True, description="Whether price includes tax")
@@ -87,12 +98,6 @@ class PriceModel(BaseModel):
     tax_class: TaxClass = Field(
         default=TaxClass.STANDARD, description="Tax classification"
     )
-
-    @field_validator("currency")
-    @classmethod
-    def validate_currency(cls, v: str) -> str:
-        """Ensure currency is uppercase."""
-        return v.upper()
 
 
 class MediaModel(BaseModel):
@@ -156,18 +161,12 @@ class IdentifiersModel(BaseModel):
     manufacturer_part_number: str | None = Field(
         default=None, description="Manufacturer's part number"
     )
-    country_of_origin: str | None = Field(
+    country_of_origin: UpperCaseStr | None = Field(
         default=None,
         min_length=2,
         max_length=2,
         description="ISO 3166-1 alpha-2 country code",
     )
-
-    @field_validator("country_of_origin")
-    @classmethod
-    def validate_country_code(cls, v: str | None) -> str | None:
-        """Ensure country code is uppercase."""
-        return v.upper() if v else None
 
 
 class SystemModel(BaseModel):
@@ -195,7 +194,7 @@ class ItemBase(BaseModel):
     name: str = Field(
         ..., min_length=1, max_length=255, description="Item display name"
     )
-    slug: str = Field(
+    slug: NormalizedSlug = Field(
         ...,
         min_length=1,
         max_length=255,
@@ -232,12 +231,6 @@ class ItemBase(BaseModel):
         default_factory=SystemModel, description="System metadata"
     )
 
-    @field_validator("slug")
-    @classmethod
-    def validate_slug(cls, v: str) -> str:
-        """Ensure slug is lowercase and URL-friendly."""
-        return v.lower().strip()
-
 
 class ItemCreate(ItemBase):
     """Schema for creating a new item."""
@@ -251,7 +244,7 @@ class ItemUpdate(BaseModel):
     sku: str | None = Field(default=None, min_length=1, max_length=100)
     status: ItemStatus | None = None
     name: str | None = Field(default=None, min_length=1, max_length=255)
-    slug: str | None = Field(default=None, min_length=1, max_length=255)
+    slug: NormalizedSlug | None = Field(default=None, min_length=1, max_length=255)
     short_description: str | None = Field(default=None, max_length=500)
     description: str | None = None
     categories: list[UUID] | None = None
@@ -264,9 +257,3 @@ class ItemUpdate(BaseModel):
     identifiers: IdentifiersModel | None = None
     custom: dict[str, Any] | None = None
     system: SystemModel | None = None
-
-    @field_validator("slug")
-    @classmethod
-    def validate_slug(cls, v: str | None) -> str | None:
-        """Ensure slug is lowercase and URL-friendly."""
-        return v.lower().strip() if v else None
