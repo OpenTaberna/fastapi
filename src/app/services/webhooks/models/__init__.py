@@ -2,8 +2,8 @@
 Webhooks Models Package
 """
 
-from .database import WebhookEventDB
-from .schemas import WebhookEventCreate, WebhookEventResponse
+from .webhooks_db_models import WebhookEventDB
+from .webhooks_models import WebhookEventCreate, WebhookEventResponse
 
 __all__ = [
     "WebhookEventDB",

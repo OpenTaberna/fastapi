@@ -4,8 +4,8 @@ Orders Models Package
 Exports ORM models and Pydantic schemas for the orders service.
 """
 
-from .database import OrderDB, OrderItemDB
-from .schemas import (
+from .orders_db_models import OrderDB, OrderItemDB
+from .orders_models import (
     OrderBase,
     OrderCreate,
     OrderDetailResponse,

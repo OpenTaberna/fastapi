@@ -9,7 +9,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.shared.database.repository import BaseRepository
-from ..models.database import PaymentDB
+from ..models.payments_db_models import PaymentDB
 
 
 class PaymentRepository(BaseRepository[PaymentDB]):

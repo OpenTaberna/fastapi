@@ -9,7 +9,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.shared.database.repository import BaseRepository
-from ..models.database import ShipmentDB
+from ..models.shipments_db_models import ShipmentDB
 
 
 class ShipmentRepository(BaseRepository[ShipmentDB]):

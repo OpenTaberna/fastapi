@@ -19,19 +19,13 @@ Usage:
 # Item store (partner service)
 
 # Customers
-from app.services.customers.models.database import CustomerDB, AddressDB  # noqa: F401
 
 # Inventory
-from app.services.inventory.models.database import InventoryItemDB, StockReservationDB  # noqa: F401
 
 # Orders
-from app.services.orders.models.database import OrderDB, OrderItemDB  # noqa: F401
 
 # Payments
-from app.services.payments.models.database import PaymentDB  # noqa: F401
 
 # Webhooks
-from app.services.webhooks.models.database import WebhookEventDB  # noqa: F401
 
 # Shipments
-from app.services.shipments.models.database import ShipmentDB  # noqa: F401

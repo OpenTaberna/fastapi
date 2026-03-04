@@ -2,8 +2,8 @@
 Payments Models Package
 """
 
-from .database import PaymentDB
-from .schemas import (
+from .payments_db_models import PaymentDB
+from .payments_models import (
     PaymentBase,
     PaymentCreate,
     PaymentProvider,

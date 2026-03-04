@@ -2,7 +2,7 @@
 Customers Services Package
 """
 
-from .database import (
+from .customers_db_service import (
     AddressRepository,
     CustomerRepository,
     get_address_repository,

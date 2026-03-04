@@ -13,8 +13,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.shared.database.repository import BaseRepository
-from ..models.database import OrderDB, OrderItemDB
-from ..models.schemas import OrderStatus
+from ..models.orders_db_models import OrderDB, OrderItemDB
+from ..models.orders_models import OrderStatus
 
 
 class OrderRepository(BaseRepository[OrderDB]):

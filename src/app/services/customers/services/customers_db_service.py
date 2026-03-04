@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.shared.database.repository import BaseRepository
-from ..models.database import AddressDB, CustomerDB
+from ..models.customers_db_models import AddressDB, CustomerDB
 
 
 class CustomerRepository(BaseRepository[CustomerDB]):

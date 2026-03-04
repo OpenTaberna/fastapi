@@ -2,7 +2,7 @@
 Orders Services Package
 """
 
-from .database import (
+from .orders_db_service import (
     OrderItemRepository,
     OrderRepository,
     get_order_item_repository,

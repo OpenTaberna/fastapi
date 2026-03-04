@@ -4,8 +4,8 @@ Customers Models Package
 Exports ORM models and Pydantic schemas for the customers service.
 """
 
-from .database import AddressDB, CustomerDB
-from .schemas import (
+from .customers_db_models import AddressDB, CustomerDB
+from .customers_models import (
     AddressBase,
     AddressCreate,
     AddressResponse,

@@ -4,8 +4,8 @@ Inventory Models Package
 Exports ORM models and Pydantic schemas for the inventory service.
 """
 
-from .database import InventoryItemDB, StockReservationDB
-from .schemas import (
+from .inventory_db_models import InventoryItemDB, StockReservationDB
+from .inventory_models import (
     InventoryItemBase,
     InventoryItemCreate,
     InventoryItemResponse,

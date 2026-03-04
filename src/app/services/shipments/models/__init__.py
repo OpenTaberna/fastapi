@@ -2,8 +2,8 @@
 Shipments Models Package
 """
 
-from .database import ShipmentDB
-from .schemas import (
+from .shipments_db_models import ShipmentDB
+from .shipments_models import (
     Carrier,
     LabelFormat,
     ShipmentBase,
