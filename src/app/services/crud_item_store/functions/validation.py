@@ -8,7 +8,8 @@ from typing import Any, Optional
 from uuid import UUID
 
 from app.shared.exceptions import duplicate_entry
-from ..services.database import ItemRepository
+from ..models import ItemDB
+from ..services import ItemRepository
 
 
 async def check_duplicate_field(
@@ -49,3 +50,41 @@ async def check_duplicate_field(
 
     if exists:
         raise duplicate_entry("Item", field_name, field_value)
+
+
+async def validate_update_conflicts(
+    repo: ItemRepository,
+    existing_item: ItemDB,
+    update_data: dict[str, Any],
+    item_uuid: UUID,
+) -> None:
+    """
+    Validate that update data doesn't create conflicts with existing items.
+
+    Checks for SKU and slug conflicts when these fields are being updated.
+    Only validates if the value is actually changing.
+
+    Args:
+        repo: Item repository instance
+        existing_item: The current item being updated
+        update_data: Dictionary of fields to update
+        item_uuid: UUID of the item being updated
+
+    Raises:
+        ValidationError: If SKU or slug conflicts with another item
+
+    Examples:
+        >>> update_data = {"sku": "NEW-SKU", "name": "Updated Name"}
+        >>> await validate_update_conflicts(repo, item, update_data, item_uuid)
+    """
+    # Check for SKU conflicts
+    if "sku" in update_data and update_data["sku"] != existing_item.sku:
+        await check_duplicate_field(
+            repo, "sku", update_data["sku"], exclude_uuid=item_uuid
+        )
+
+    # Check for slug conflicts
+    if "slug" in update_data and update_data["slug"] != existing_item.slug:
+        await check_duplicate_field(
+            repo, "slug", update_data["slug"], exclude_uuid=item_uuid
+        )
