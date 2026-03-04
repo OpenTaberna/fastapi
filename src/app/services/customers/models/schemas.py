@@ -60,16 +60,22 @@ class CustomerResponse(CustomerBase):
 class AddressBase(BaseModel):
     """Shared address fields."""
 
-    street: str = Field(..., min_length=1, max_length=255, description="Street and house number")
+    street: str = Field(
+        ..., min_length=1, max_length=255, description="Street and house number"
+    )
     city: str = Field(..., min_length=1, max_length=100, description="City name")
-    zip_code: str = Field(..., min_length=1, max_length=20, description="Postal / ZIP code")
+    zip_code: str = Field(
+        ..., min_length=1, max_length=20, description="Postal / ZIP code"
+    )
     country: str = Field(
         ...,
         min_length=2,
         max_length=2,
         description="ISO 3166-1 alpha-2 country code (e.g. 'DE')",
     )
-    is_default: bool = Field(default=False, description="Whether this is the default shipping address")
+    is_default: bool = Field(
+        default=False, description="Whether this is the default shipping address"
+    )
 
 
 class AddressCreate(AddressBase):

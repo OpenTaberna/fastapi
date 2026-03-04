@@ -29,5 +29,7 @@ class WebhookEventResponse(BaseModel):
     provider: str = Field(..., description="Webhook source provider")
     event_id: str = Field(..., description="Provider-side event ID")
     payload: dict = Field(..., description="Raw event payload")
-    processed_at: datetime | None = Field(default=None, description="Processing timestamp")
+    processed_at: datetime | None = Field(
+        default=None, description="Processing timestamp"
+    )
     created_at: datetime = Field(..., description="Record creation timestamp")

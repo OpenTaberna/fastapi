@@ -77,8 +77,12 @@ class InventoryItemDB(Base, TimestampMixin):
 
     __table_args__ = (
         CheckConstraint("on_hand >= 0", name="ck_inventory_items_on_hand_non_negative"),
-        CheckConstraint("reserved >= 0", name="ck_inventory_items_reserved_non_negative"),
-        CheckConstraint("on_hand >= reserved", name="ck_inventory_items_on_hand_gte_reserved"),
+        CheckConstraint(
+            "reserved >= 0", name="ck_inventory_items_reserved_non_negative"
+        ),
+        CheckConstraint(
+            "on_hand >= reserved", name="ck_inventory_items_on_hand_gte_reserved"
+        ),
     )
 
     def __repr__(self) -> str:

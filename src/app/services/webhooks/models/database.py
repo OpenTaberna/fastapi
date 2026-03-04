@@ -83,7 +83,9 @@ class WebhookEventDB(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("provider", "event_id", name="uq_webhook_events_provider_event_id"),
+        UniqueConstraint(
+            "provider", "event_id", name="uq_webhook_events_provider_event_id"
+        ),
     )
 
     def __repr__(self) -> str:

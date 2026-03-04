@@ -81,7 +81,9 @@ class OrderDB(Base, TimestampMixin, SoftDeleteMixin):
     )
 
     __table_args__ = (
-        CheckConstraint("total_amount >= 0", name="ck_orders_total_amount_non_negative"),
+        CheckConstraint(
+            "total_amount >= 0", name="ck_orders_total_amount_non_negative"
+        ),
     )
 
     def __repr__(self) -> str:
@@ -144,7 +146,9 @@ class OrderItemDB(Base, TimestampMixin):
 
     __table_args__ = (
         CheckConstraint("quantity > 0", name="ck_order_items_quantity_positive"),
-        CheckConstraint("unit_price >= 0", name="ck_order_items_unit_price_non_negative"),
+        CheckConstraint(
+            "unit_price >= 0", name="ck_order_items_unit_price_non_negative"
+        ),
     )
 
     def __repr__(self) -> str:

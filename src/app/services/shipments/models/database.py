@@ -88,9 +88,7 @@ class ShipmentDB(Base, TimestampMixin):
         doc="Shipment status: pending | label_created | handed_over",
     )
 
-    __table_args__ = (
-        UniqueConstraint("order_id", name="uq_shipments_order_id"),
-    )
+    __table_args__ = (UniqueConstraint("order_id", name="uq_shipments_order_id"),)
 
     def __repr__(self) -> str:
         return (

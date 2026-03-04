@@ -89,9 +89,7 @@ class PaymentDB(Base, TimestampMixin):
         doc="Payment status: pending | succeeded | failed | refunded",
     )
 
-    __table_args__ = (
-        UniqueConstraint("order_id", name="uq_payments_order_id"),
-    )
+    __table_args__ = (UniqueConstraint("order_id", name="uq_payments_order_id"),)
 
     def __repr__(self) -> str:
         return (

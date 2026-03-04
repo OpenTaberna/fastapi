@@ -45,9 +45,13 @@ class OrderStatus(str, Enum):
 class OrderItemBase(BaseModel):
     """Shared order item fields."""
 
-    sku: str = Field(..., min_length=1, max_length=100, description="SKU of the ordered item")
+    sku: str = Field(
+        ..., min_length=1, max_length=100, description="SKU of the ordered item"
+    )
     quantity: int = Field(..., gt=0, description="Number of units ordered")
-    unit_price: int = Field(..., ge=0, description="Price per unit at checkout time (in cents)")
+    unit_price: int = Field(
+        ..., ge=0, description="Price per unit at checkout time (in cents)"
+    )
 
 
 class OrderItemCreate(BaseModel):
@@ -58,7 +62,9 @@ class OrderItemCreate(BaseModel):
     item service at checkout time and stored as an immutable snapshot.
     """
 
-    sku: str = Field(..., min_length=1, max_length=100, description="SKU of the item to order")
+    sku: str = Field(
+        ..., min_length=1, max_length=100, description="SKU of the item to order"
+    )
     quantity: int = Field(..., gt=0, description="Number of units to order")
 
 
@@ -127,7 +133,9 @@ class OrderResponse(OrderBase):
     total_amount: int = Field(..., description="Order total in cents")
     created_at: datetime = Field(..., description="Record creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
-    deleted_at: datetime | None = Field(default=None, description="Soft delete timestamp")
+    deleted_at: datetime | None = Field(
+        default=None, description="Soft delete timestamp"
+    )
 
 
 class OrderDetailResponse(OrderResponse):

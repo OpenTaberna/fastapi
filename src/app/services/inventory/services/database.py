@@ -119,6 +119,8 @@ def get_inventory_repository(session: AsyncSession) -> InventoryRepository:
     return InventoryRepository(session)
 
 
-def get_stock_reservation_repository(session: AsyncSession) -> StockReservationRepository:
+def get_stock_reservation_repository(
+    session: AsyncSession,
+) -> StockReservationRepository:
     """Factory for StockReservationRepository — use with FastAPI Depends."""
     return StockReservationRepository(session)

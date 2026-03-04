@@ -17,7 +17,6 @@ Usage:
 """
 
 # Item store (partner service)
-from app.services.crud_item_store.models.database import ItemDB  # noqa: F401
 
 # Customers
 from app.services.customers.models.database import CustomerDB, AddressDB  # noqa: F401

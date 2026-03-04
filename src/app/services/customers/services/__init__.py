@@ -2,7 +2,12 @@
 Customers Services Package
 """
 
-from .database import AddressRepository, CustomerRepository, get_address_repository, get_customer_repository
+from .database import (
+    AddressRepository,
+    CustomerRepository,
+    get_address_repository,
+    get_customer_repository,
+)
 
 __all__ = [
     "CustomerRepository",

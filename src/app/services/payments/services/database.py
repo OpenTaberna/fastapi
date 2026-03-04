@@ -32,7 +32,9 @@ class PaymentRepository(BaseRepository[PaymentDB]):
         """
         return await self.get_by(order_id=order_id)
 
-    async def get_by_provider_reference(self, provider_reference: str) -> PaymentDB | None:
+    async def get_by_provider_reference(
+        self, provider_reference: str
+    ) -> PaymentDB | None:
         """
         Return a payment by its PSP-side reference ID.
 

@@ -62,9 +62,15 @@ class ShipmentCreate(ShipmentBase):
     For automated carriers (DHL), it is populated later by the label job.
     """
 
-    tracking_number: str | None = Field(default=None, description="Carrier tracking number")
-    label_url: str | None = Field(default=None, description="Label file URL/path in storage")
-    label_format: LabelFormat | None = Field(default=None, description="Label file format")
+    tracking_number: str | None = Field(
+        default=None, description="Carrier tracking number"
+    )
+    label_url: str | None = Field(
+        default=None, description="Label file URL/path in storage"
+    )
+    label_format: LabelFormat | None = Field(
+        default=None, description="Label file format"
+    )
 
 
 class ShipmentUpdate(BaseModel):
@@ -82,9 +88,13 @@ class ShipmentResponse(ShipmentBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID = Field(..., description="Internal shipment UUID")
-    tracking_number: str | None = Field(default=None, description="Carrier tracking number")
+    tracking_number: str | None = Field(
+        default=None, description="Carrier tracking number"
+    )
     label_url: str | None = Field(default=None, description="Label file URL/path")
-    label_format: LabelFormat | None = Field(default=None, description="Label file format")
+    label_format: LabelFormat | None = Field(
+        default=None, description="Label file format"
+    )
     status: ShipmentStatus = Field(..., description="Current shipment status")
     created_at: datetime = Field(..., description="Record creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")

@@ -41,7 +41,9 @@ class PaymentBase(BaseModel):
     provider: PaymentProvider = Field(..., description="PSP provider")
     provider_reference: str = Field(..., description="PSP-side transaction ID")
     amount: int = Field(..., ge=0, description="Charged amount in cents")
-    currency: str = Field(..., min_length=3, max_length=3, description="ISO 4217 currency code")
+    currency: str = Field(
+        ..., min_length=3, max_length=3, description="ISO 4217 currency code"
+    )
 
 
 class PaymentCreate(PaymentBase):
