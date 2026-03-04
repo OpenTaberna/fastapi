@@ -1,11 +1,12 @@
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.chore import lifespan
 from app.services.crud_item_store import router as item_store_router
 from app.shared.exceptions import AppException, InternalError
-from app.shared.responses import ErrorResponse
+from app.shared.responses import ErrorResponse, ValidationErrorResponse
 from app.shared.logger import get_logger
 
 logger = get_logger(__name__)
@@ -26,6 +27,36 @@ async def app_exception_handler(request: Request, exc: AppException) -> JSONResp
     error_response = ErrorResponse.from_exception(exc)
     return JSONResponse(
         status_code=error_response.status_code,
+        content=error_response.model_dump(mode="json"),
+    )
+
+
+# Handler for FastAPI/Pydantic request validation errors (wrong types, missing fields, etc.)
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """
+    Handle FastAPI RequestValidationError and convert to our standard ValidationErrorResponse.
+
+    FastAPI raises this for invalid path/query params and request body validation failures.
+    Maps Pydantic's raw error format to our structured ValidationErrorResponse so the
+    actual 422 response always matches the schema documented in /docs.
+    """
+    validation_errors = [
+        {
+            "loc": list(error["loc"]),
+            "msg": error["msg"],
+            "type": error["type"],
+        }
+        for error in exc.errors()
+    ]
+    error_response = ValidationErrorResponse(
+        message="Validation failed",
+        validation_errors=validation_errors,
+    )
+    return JSONResponse(
+        status_code=422,
         content=error_response.model_dump(mode="json"),
     )
 
