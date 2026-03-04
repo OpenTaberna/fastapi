@@ -4,8 +4,11 @@ from fastapi.responses import JSONResponse
 
 from app.chore import lifespan
 from app.services.crud_item_store import router as item_store_router
-from app.shared.exceptions import AppException
+from app.shared.exceptions import AppException, InternalError
 from app.shared.responses import ErrorResponse
+from app.shared.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 app = FastAPI(title="OpenTaberna API", lifespan=lifespan)
@@ -23,6 +26,41 @@ async def app_exception_handler(request: Request, exc: AppException) -> JSONResp
     error_response = ErrorResponse.from_exception(exc)
     return JSONResponse(
         status_code=error_response.status_code,
+        content=error_response.model_dump(mode="json"),
+    )
+
+
+# Catch-all exception handler for unexpected errors
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """
+    Handle all unexpected exceptions and convert them to structured error responses.
+
+    This is a safety net for any exceptions not caught by AppException handler.
+    Logs the error for debugging and returns a generic 500 error to the client.
+    """
+    logger.error(
+        "Unhandled exception occurred",
+        extra={
+            "error_type": type(exc).__name__,
+            "error_message": str(exc),
+            "path": request.url.path,
+            "method": request.method,
+        },
+        exc_info=True,
+    )
+
+    # Wrap in InternalError for consistent error response structure
+    error = InternalError(
+        message="An unexpected error occurred",
+        context={
+            "error_type": type(exc).__name__,
+        },
+        original_exception=exc,
+    )
+    error_response = ErrorResponse.from_exception(error)
+    return JSONResponse(
+        status_code=500,
         content=error_response.model_dump(mode="json"),
     )
 
