@@ -157,12 +157,12 @@ class ValidationErrorResponse(ErrorResponse):
     """
 
     error_code: str = Field(
-        default="VALIDATION_ERROR",
-        description="Error code, defaults to VALIDATION_ERROR",
+        default="invalid_input",
+        description="Error code, defaults to invalid_input",
     )
 
     error_category: str = Field(
-        default="VALIDATION", description="Error category, defaults to VALIDATION"
+        default="validation", description="Error category, defaults to validation"
     )
 
     status_code: int = Field(
@@ -180,8 +180,8 @@ class ValidationErrorResponse(ErrorResponse):
                 "success": False,
                 "message": "Validation failed",
                 "status_code": 422,
-                "error_code": "VALIDATION_ERROR",
-                "error_category": "VALIDATION",
+                "error_code": "invalid_input",
+                "error_category": "validation",
                 "validation_errors": [
                     {
                         "field": "email",
