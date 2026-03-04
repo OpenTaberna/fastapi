@@ -9,7 +9,7 @@ from uuid import UUID
 
 from pydantic import ConfigDict, Field
 
-from ..models.item import ItemBase
+from ..models import ItemBase
 
 
 class ItemResponse(ItemBase):
