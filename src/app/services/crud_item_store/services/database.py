@@ -20,45 +20,17 @@ class ItemRepository(BaseRepository[ItemDB]):
     Repository for Item database operations.
 
     Extends BaseRepository with item-specific queries like:
-    - Get by SKU
-    - Get by slug
     - Generic search with multiple criteria
     - Field existence checks
+
+    Use inherited get_by() for single-field lookups:
+    - get_by(sku="...") for SKU lookups
+    - get_by(slug="...") for slug lookups
     """
 
     def __init__(self, session: AsyncSession):
         """Initialize item repository with session."""
         super().__init__(ItemDB, session)
-
-    async def get_by_sku(self, sku: str) -> Optional[ItemDB]:
-        """
-        Get item by SKU (Stock Keeping Unit).
-
-        Args:
-            sku: Stock Keeping Unit
-
-        Returns:
-            Item or None if not found
-
-        Example:
-            >>> item = await repo.get_by_sku("CHAIR-RED-001")
-        """
-        return await self.get_by(sku=sku)
-
-    async def get_by_slug(self, slug: str) -> Optional[ItemDB]:
-        """
-        Get item by URL slug.
-
-        Args:
-            slug: URL-friendly identifier
-
-        Returns:
-            Item or None if not found
-
-        Example:
-            >>> item = await repo.get_by_slug("red-wooden-chair")
-        """
-        return await self.get_by(slug=slug)
 
     async def search(
         self,

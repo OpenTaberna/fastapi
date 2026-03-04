@@ -211,7 +211,7 @@ async def get_item_by_slug(
         DatabaseError (500): If database operation fails
     """
     repo = get_item_repository(session)
-    item = await repo.get_by_slug(slug)
+    item = await repo.get_by(slug=slug)
 
     if not item:
         raise entity_not_found("Item", slug)
