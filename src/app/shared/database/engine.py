@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
     AsyncEngine,
 )
-from sqlalchemy.pool import NullPool, QueuePool
+from sqlalchemy.pool import NullPool
 
 from app.shared.database.utils import (
     get_logger,
@@ -109,7 +109,6 @@ def create_engine(
             pool_timeout=pool_timeout,
             pool_recycle=pool_recycle,
             pool_pre_ping=pool_pre_ping,
-            poolclass=QueuePool,
             connect_args=connect_args,
         )
         logger.info("Database engine created successfully")

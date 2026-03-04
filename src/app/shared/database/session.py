@@ -7,11 +7,13 @@ Provides async session factory and dependency injection helpers.
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
+from fastapi import HTTPException
+from fastapi.exceptions import RequestValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.shared.database.engine import get_engine
-
 from app.shared.database.utils import get_logger, DatabaseError
+from app.shared.exceptions import AppException
 
 logger = get_logger(__name__)
 
@@ -68,6 +70,16 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         yield session
         await session.commit()
         logger.debug("Database session committed")
+    except (RequestValidationError, HTTPException):
+        # FastAPI validation and HTTP errors should pass through unchanged
+        await session.rollback()
+        logger.debug("Database session rolled back due to FastAPI exception")
+        raise
+    except AppException:
+        # Application exceptions should pass through to the global handler
+        await session.rollback()
+        logger.debug("Database session rolled back due to AppException")
+        raise
     except DatabaseError:
         # Already a DatabaseError, just rollback and re-raise
         await session.rollback()
