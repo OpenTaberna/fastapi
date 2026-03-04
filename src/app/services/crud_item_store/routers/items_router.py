@@ -15,7 +15,7 @@ from app.shared.exceptions import entity_not_found
 from app.shared.responses import PaginatedResponse, PageInfo
 from ..models import ItemCreate, ItemStatus, ItemUpdate
 from ..responses import ItemResponse
-from ..responses.docs import (
+from ..responses.item_docs import (
     CREATE_ITEM_RESPONSES,
     GET_ITEM_RESPONSES,
     LIST_ITEMS_RESPONSES,

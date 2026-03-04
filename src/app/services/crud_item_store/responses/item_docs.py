@@ -10,7 +10,7 @@ from app.shared.responses import (
     PaginatedResponse,
     ValidationErrorResponse,
 )
-from ..responses import ItemResponse
+from . import ItemResponse
 
 
 # ============================================================================
