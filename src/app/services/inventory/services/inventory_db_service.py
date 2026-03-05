@@ -14,7 +14,10 @@ from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.shared.database.repository import BaseRepository
+from app.shared.logger import get_logger
 from ..models.inventory_db_models import InventoryItemDB, StockReservationDB
+
+logger = get_logger(__name__)
 
 
 class InventoryRepository(BaseRepository[InventoryItemDB]):
@@ -24,18 +27,6 @@ class InventoryRepository(BaseRepository[InventoryItemDB]):
 
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(InventoryItemDB, session)
-
-    async def get_by_sku(self, sku: str) -> InventoryItemDB | None:
-        """
-        Look up an inventory item by SKU.
-
-        Args:
-            sku: The SKU string to look up.
-
-        Returns:
-            InventoryItemDB instance or None if not tracked.
-        """
-        return await self.get_by(sku=sku)
 
     async def get_available_quantity(self, sku: str) -> int:
         """
@@ -50,6 +41,7 @@ class InventoryRepository(BaseRepository[InventoryItemDB]):
         Returns:
             Available quantity. Returns 0 if the SKU is not tracked.
         """
+        logger.debug("Getting available quantity", extra={"sku": sku})
         stmt = select(
             (self.model.on_hand - self.model.reserved).label("available")
         ).where(self.model.sku == sku)
@@ -78,6 +70,7 @@ class StockReservationRepository(BaseRepository[StockReservationDB]):
         Returns:
             List of active StockReservationDB instances.
         """
+        logger.debug("Getting active reservations for order", extra={"order_id": str(order_id)})
         stmt = select(self.model).where(
             and_(
                 self.model.order_id == order_id,
@@ -99,6 +92,7 @@ class StockReservationRepository(BaseRepository[StockReservationDB]):
         Returns:
             List of expired-but-still-active StockReservationDB instances.
         """
+        logger.debug("Getting expired active reservations")
         stmt = select(self.model).where(
             and_(
                 self.model.status == "active",

@@ -13,8 +13,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.shared.database.repository import BaseRepository
+from app.shared.logger import get_logger
 from ..models.orders_db_models import OrderDB, OrderItemDB
 from ..models.orders_models import OrderStatus
+
+logger = get_logger(__name__)
 
 
 class OrderRepository(BaseRepository[OrderDB]):
@@ -48,6 +51,7 @@ class OrderRepository(BaseRepository[OrderDB]):
         Returns:
             List of OrderDB instances (soft-deleted orders excluded).
         """
+        logger.debug("Getting orders for customer", extra={"customer_id": str(customer_id), "skip": skip, "limit": limit})
         stmt = (
             select(self.model)
             .where(
@@ -80,6 +84,7 @@ class OrderRepository(BaseRepository[OrderDB]):
         Returns:
             List of OrderDB instances (soft-deleted orders excluded).
         """
+        logger.debug("Getting orders by status", extra={"status": status.value, "skip": skip, "limit": limit})
         stmt = (
             select(self.model)
             .where(
@@ -101,20 +106,6 @@ class OrderItemRepository(BaseRepository[OrderItemDB]):
 
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(OrderItemDB, session)
-
-    async def get_all_for_order(self, order_id: UUID) -> list[OrderItemDB]:
-        """
-        Return all line items for a given order.
-
-        Args:
-            order_id: UUID of the parent order.
-
-        Returns:
-            List of OrderItemDB instances.
-        """
-        stmt = select(self.model).where(self.model.order_id == order_id)
-        result = await self.session.execute(stmt)
-        return list(result.scalars().all())
 
 
 # ---------------------------------------------------------------------------

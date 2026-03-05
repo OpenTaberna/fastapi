@@ -2,7 +2,7 @@
 Inventory Services Package
 """
 
-from .customers_db_service import (
+from .inventory_db_service import (
     InventoryRepository,
     StockReservationRepository,
     get_inventory_repository,

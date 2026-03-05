@@ -12,7 +12,10 @@ from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.shared.database.repository import BaseRepository
+from app.shared.logger import get_logger
 from ..models import ItemDB
+
+logger = get_logger(__name__)
 
 
 class ItemRepository(BaseRepository[ItemDB]):
@@ -72,6 +75,10 @@ class ItemRepository(BaseRepository[ItemDB]):
             >>> # Search by brand and status
             >>> items = await repo.search(brand="TestBrand", status="active")
         """
+        logger.debug(
+            "Searching items",
+            extra={"name": name, "status": status, "brand": brand, "skip": skip, "limit": limit},
+        )
         stmt = select(self.model)
         conditions = []
 
@@ -124,6 +131,10 @@ class ItemRepository(BaseRepository[ItemDB]):
             ...     "slug", "red-chair", exclude_uuid=item_uuid
             ... )
         """
+        logger.debug(
+            "Checking field existence",
+            extra={"field_name": field_name, "exclude_uuid": str(exclude_uuid) if exclude_uuid else None},
+        )
         # Validate field exists on model
         if not hasattr(self.model, field_name):
             raise ValueError(f"Field '{field_name}' does not exist on ItemDB model")
