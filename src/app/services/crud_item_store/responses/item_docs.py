@@ -18,7 +18,10 @@ from .items_response_models import _ITEM_EXAMPLE
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _err(status: int, code: str, category: str, message: str, details: dict | None = None) -> dict:
+
+def _err(
+    status: int, code: str, category: str, message: str, details: dict | None = None
+) -> dict:
     """Build an error example dict from an actual ErrorResponse instance."""
     return ErrorResponse(
         status_code=status,
@@ -43,7 +46,13 @@ def _validation_err(message: str, errors: list[dict]) -> dict:
 
 INVALID_UUID_EXAMPLE = _validation_err(
     message="Validation failed",
-    errors=[{"loc": ["path", "item_uuid"], "msg": "Input should be a valid UUID", "type": "uuid_parsing"}],
+    errors=[
+        {
+            "loc": ["path", "item_uuid"],
+            "msg": "Input should be a valid UUID",
+            "type": "uuid_parsing",
+        }
+    ],
 )
 
 ITEM_NOT_FOUND_EXAMPLE = _err(
@@ -51,7 +60,10 @@ ITEM_NOT_FOUND_EXAMPLE = _err(
     code="entity_not_found",
     category="not_found",
     message="Item with ID '123e4567-e89b-12d3-a456-426614174000' not found",
-    details={"entity_type": "Item", "entity_id": "123e4567-e89b-12d3-a456-426614174000"},
+    details={
+        "entity_type": "Item",
+        "entity_id": "123e4567-e89b-12d3-a456-426614174000",
+    },
 )
 
 DUPLICATE_SKU_EXAMPLE = _err(
@@ -88,22 +100,46 @@ INTERNAL_ERROR_EXAMPLE = _err(
 
 _INVALID_BODY_EXAMPLE = _validation_err(
     message="Validation failed",
-    errors=[{"loc": ["body", "price", "amount"], "msg": "Input should be greater than or equal to 0", "type": "greater_than_equal"}],
+    errors=[
+        {
+            "loc": ["body", "price", "amount"],
+            "msg": "Input should be greater than or equal to 0",
+            "type": "greater_than_equal",
+        }
+    ],
 )
 
 _INVALID_PAGINATION_SKIP = _validation_err(
     message="Validation failed",
-    errors=[{"loc": ["query", "skip"], "msg": "Input should be greater than or equal to 0", "type": "greater_than_equal"}],
+    errors=[
+        {
+            "loc": ["query", "skip"],
+            "msg": "Input should be greater than or equal to 0",
+            "type": "greater_than_equal",
+        }
+    ],
 )
 
 _INVALID_PAGINATION_LIMIT = _validation_err(
     message="Validation failed",
-    errors=[{"loc": ["query", "limit"], "msg": "Input should be less than or equal to 100", "type": "less_than_equal"}],
+    errors=[
+        {
+            "loc": ["query", "limit"],
+            "msg": "Input should be less than or equal to 100",
+            "type": "less_than_equal",
+        }
+    ],
 )
 
 _INVALID_STATUS_PARAM = _validation_err(
     message="Validation failed",
-    errors=[{"loc": ["query", "status"], "msg": "Input should be 'draft', 'active' or 'archived'", "type": "enum"}],
+    errors=[
+        {
+            "loc": ["query", "status"],
+            "msg": "Input should be 'draft', 'active' or 'archived'",
+            "type": "enum",
+        }
+    ],
 )
 
 
@@ -117,8 +153,14 @@ _500_BLOCK = {
     "content": {
         "application/json": {
             "examples": {
-                "database_error": {"summary": "Database error", "value": DATABASE_ERROR_EXAMPLE},
-                "internal_error": {"summary": "Unexpected error", "value": INTERNAL_ERROR_EXAMPLE},
+                "database_error": {
+                    "summary": "Database error",
+                    "value": DATABASE_ERROR_EXAMPLE,
+                },
+                "internal_error": {
+                    "summary": "Unexpected error",
+                    "value": INTERNAL_ERROR_EXAMPLE,
+                },
             }
         }
     },
@@ -153,9 +195,18 @@ CREATE_ITEM_RESPONSES = {
         "content": {
             "application/json": {
                 "examples": {
-                    "duplicate_sku": {"summary": "Duplicate SKU", "value": DUPLICATE_SKU_EXAMPLE},
-                    "duplicate_slug": {"summary": "Duplicate slug", "value": DUPLICATE_SLUG_EXAMPLE},
-                    "invalid_input": {"summary": "Invalid input data", "value": _INVALID_BODY_EXAMPLE},
+                    "duplicate_sku": {
+                        "summary": "Duplicate SKU",
+                        "value": DUPLICATE_SKU_EXAMPLE,
+                    },
+                    "duplicate_slug": {
+                        "summary": "Duplicate slug",
+                        "value": DUPLICATE_SLUG_EXAMPLE,
+                    },
+                    "invalid_input": {
+                        "summary": "Invalid input data",
+                        "value": _INVALID_BODY_EXAMPLE,
+                    },
                 }
             }
         },
@@ -185,9 +236,18 @@ LIST_ITEMS_RESPONSES = {
         "content": {
             "application/json": {
                 "examples": {
-                    "invalid_skip": {"summary": "Negative skip value", "value": _INVALID_PAGINATION_SKIP},
-                    "invalid_limit": {"summary": "Limit out of range", "value": _INVALID_PAGINATION_LIMIT},
-                    "invalid_status": {"summary": "Invalid status value", "value": _INVALID_STATUS_PARAM},
+                    "invalid_skip": {
+                        "summary": "Negative skip value",
+                        "value": _INVALID_PAGINATION_SKIP,
+                    },
+                    "invalid_limit": {
+                        "summary": "Limit out of range",
+                        "value": _INVALID_PAGINATION_LIMIT,
+                    },
+                    "invalid_status": {
+                        "summary": "Invalid status value",
+                        "value": _INVALID_STATUS_PARAM,
+                    },
                 }
             }
         },
@@ -232,10 +292,22 @@ UPDATE_ITEM_RESPONSES = {
         "content": {
             "application/json": {
                 "examples": {
-                    "duplicate_sku": {"summary": "SKU conflicts with another item", "value": DUPLICATE_SKU_EXAMPLE},
-                    "duplicate_slug": {"summary": "Slug conflicts with another item", "value": DUPLICATE_SLUG_EXAMPLE},
-                    "invalid_uuid": {"summary": "Invalid UUID format", "value": INVALID_UUID_EXAMPLE},
-                    "invalid_input": {"summary": "Invalid field values", "value": _INVALID_BODY_EXAMPLE},
+                    "duplicate_sku": {
+                        "summary": "SKU conflicts with another item",
+                        "value": DUPLICATE_SKU_EXAMPLE,
+                    },
+                    "duplicate_slug": {
+                        "summary": "Slug conflicts with another item",
+                        "value": DUPLICATE_SLUG_EXAMPLE,
+                    },
+                    "invalid_uuid": {
+                        "summary": "Invalid UUID format",
+                        "value": INVALID_UUID_EXAMPLE,
+                    },
+                    "invalid_input": {
+                        "summary": "Invalid field values",
+                        "value": _INVALID_BODY_EXAMPLE,
+                    },
                 }
             }
         },
@@ -249,4 +321,3 @@ DELETE_ITEM_RESPONSES = {
     422: _422_UUID_BLOCK,
     500: _500_BLOCK,
 }
-

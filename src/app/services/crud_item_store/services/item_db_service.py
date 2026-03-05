@@ -77,7 +77,13 @@ class ItemRepository(BaseRepository[ItemDB]):
         """
         logger.debug(
             "Searching items",
-            extra={"name": name, "status": status, "brand": brand, "skip": skip, "limit": limit},
+            extra={
+                "name": name,
+                "status": status,
+                "brand": brand,
+                "skip": skip,
+                "limit": limit,
+            },
         )
         stmt = select(self.model)
         conditions = []
@@ -133,7 +139,10 @@ class ItemRepository(BaseRepository[ItemDB]):
         """
         logger.debug(
             "Checking field existence",
-            extra={"field_name": field_name, "exclude_uuid": str(exclude_uuid) if exclude_uuid else None},
+            extra={
+                "field_name": field_name,
+                "exclude_uuid": str(exclude_uuid) if exclude_uuid else None,
+            },
         )
         # Validate field exists on model
         if not hasattr(self.model, field_name):

@@ -51,7 +51,10 @@ class OrderRepository(BaseRepository[OrderDB]):
         Returns:
             List of OrderDB instances (soft-deleted orders excluded).
         """
-        logger.debug("Getting orders for customer", extra={"customer_id": str(customer_id), "skip": skip, "limit": limit})
+        logger.debug(
+            "Getting orders for customer",
+            extra={"customer_id": str(customer_id), "skip": skip, "limit": limit},
+        )
         stmt = (
             select(self.model)
             .where(
@@ -84,7 +87,10 @@ class OrderRepository(BaseRepository[OrderDB]):
         Returns:
             List of OrderDB instances (soft-deleted orders excluded).
         """
-        logger.debug("Getting orders by status", extra={"status": status.value, "skip": skip, "limit": limit})
+        logger.debug(
+            "Getting orders by status",
+            extra={"status": status.value, "skip": skip, "limit": limit},
+        )
         stmt = (
             select(self.model)
             .where(

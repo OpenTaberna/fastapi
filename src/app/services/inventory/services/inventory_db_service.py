@@ -70,7 +70,9 @@ class StockReservationRepository(BaseRepository[StockReservationDB]):
         Returns:
             List of active StockReservationDB instances.
         """
-        logger.debug("Getting active reservations for order", extra={"order_id": str(order_id)})
+        logger.debug(
+            "Getting active reservations for order", extra={"order_id": str(order_id)}
+        )
         stmt = select(self.model).where(
             and_(
                 self.model.order_id == order_id,

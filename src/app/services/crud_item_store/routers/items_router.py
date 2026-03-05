@@ -163,7 +163,14 @@ async def list_items(
         DatabaseError (500): If database operation fails
     """
     repo = get_item_repository(session)
-    logger.debug("Listing items", extra={"skip": skip, "limit": limit, "status": status_filter.value if status_filter else None})
+    logger.debug(
+        "Listing items",
+        extra={
+            "skip": skip,
+            "limit": limit,
+            "status": status_filter.value if status_filter else None,
+        },
+    )
 
     # Apply filters
     filters = {}

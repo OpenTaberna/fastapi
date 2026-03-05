@@ -23,7 +23,6 @@ from app.services.crud_item_store.models.item_db_models import ItemDB  # noqa: F
 from app.services.customers.models.customers_db_models import AddressDB, CustomerDB  # noqa: F401
 
 # Inventory
-from app.services.inventory.models.inventory_db_models import InventoryItemDB, StockReservationDB  # noqa: F401
 
 # Orders
 from app.services.orders.models.orders_db_models import OrderDB, OrderItemDB  # noqa: F401

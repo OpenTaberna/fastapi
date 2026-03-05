@@ -49,7 +49,10 @@ async def check_duplicate_field(
     """
     logger.debug(
         "Checking for duplicate field value",
-        extra={"field_name": field_name, "exclude_uuid": str(exclude_uuid) if exclude_uuid else None},
+        extra={
+            "field_name": field_name,
+            "exclude_uuid": str(exclude_uuid) if exclude_uuid else None,
+        },
     )
     # Use the repository's generic field_exists method
     # This will raise ValueError if field doesn't exist on the model
