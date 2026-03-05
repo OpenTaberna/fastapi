@@ -23,15 +23,13 @@ INVALID_UUID_EXAMPLE = {
     "status_code": 422,
     "error_code": "invalid_input",
     "error_category": "validation",
-    "details": {
-        "errors": [
-            {
-                "loc": ["path", "item_uuid"],
-                "msg": "Input should be a valid UUID",
-                "type": "uuid_parsing",
-            }
-        ]
-    },
+    "validation_errors": [
+        {
+            "loc": ["path", "item_uuid"],
+            "msg": "Input should be a valid UUID",
+            "type": "uuid_parsing",
+        }
+    ],
 }
 
 ITEM_NOT_FOUND_EXAMPLE = {
@@ -114,15 +112,13 @@ CREATE_ITEM_RESPONSES = {
                             "status_code": 422,
                             "error_code": "invalid_input",
                             "error_category": "validation",
-                            "details": {
-                                "errors": [
-                                    {
-                                        "loc": ["body", "price", "amount"],
-                                        "msg": "Input should be greater than or equal to 0",
-                                        "type": "greater_than_equal",
-                                    }
-                                ]
-                            },
+                            "validation_errors": [
+                                {
+                                    "loc": ["body", "price", "amount"],
+                                    "msg": "Input should be greater than or equal to 0",
+                                    "type": "greater_than_equal",
+                                }
+                            ],
                         },
                     },
                 }
@@ -213,15 +209,13 @@ LIST_ITEMS_RESPONSES = {
                             "status_code": 422,
                             "error_code": "invalid_input",
                             "error_category": "validation",
-                            "details": {
-                                "errors": [
-                                    {
-                                        "loc": ["query", "skip"],
-                                        "msg": "Input should be greater than or equal to 0",
-                                        "type": "greater_than_equal",
-                                    }
-                                ]
-                            },
+                            "validation_errors": [
+                                {
+                                    "loc": ["query", "skip"],
+                                    "msg": "Input should be greater than or equal to 0",
+                                    "type": "greater_than_equal",
+                                }
+                            ],
                         },
                     },
                     "invalid_limit": {
@@ -232,15 +226,13 @@ LIST_ITEMS_RESPONSES = {
                             "status_code": 422,
                             "error_code": "invalid_input",
                             "error_category": "validation",
-                            "details": {
-                                "errors": [
-                                    {
-                                        "loc": ["query", "limit"],
-                                        "msg": "Input should be less than or equal to 100",
-                                        "type": "less_than_equal",
-                                    }
-                                ]
-                            },
+                            "validation_errors": [
+                                {
+                                    "loc": ["query", "limit"],
+                                    "msg": "Input should be less than or equal to 100",
+                                    "type": "less_than_equal",
+                                }
+                            ],
                         },
                     },
                     "invalid_status": {
@@ -251,15 +243,13 @@ LIST_ITEMS_RESPONSES = {
                             "status_code": 422,
                             "error_code": "invalid_input",
                             "error_category": "validation",
-                            "details": {
-                                "errors": [
-                                    {
-                                        "loc": ["query", "status"],
-                                        "msg": "Input should be 'draft', 'active' or 'archived'",
-                                        "type": "enum",
-                                    }
-                                ]
-                            },
+                            "validation_errors": [
+                                {
+                                    "loc": ["query", "status"],
+                                    "msg": "Input should be 'draft', 'active' or 'archived'",
+                                    "type": "enum",
+                                }
+                            ],
                         },
                     },
                 }
@@ -395,15 +385,13 @@ UPDATE_ITEM_RESPONSES = {
                             "status_code": 422,
                             "error_code": "invalid_input",
                             "error_category": "validation",
-                            "details": {
-                                "errors": [
-                                    {
-                                        "loc": ["body", "status"],
-                                        "msg": "Input should be 'draft', 'active' or 'archived'",
-                                        "type": "enum",
-                                    }
-                                ]
-                            },
+                            "validation_errors": [
+                                {
+                                    "loc": ["body", "status"],
+                                    "msg": "Input should be 'draft', 'active' or 'archived'",
+                                    "type": "enum",
+                                }
+                            ],
                         },
                     },
                 }
