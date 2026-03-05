@@ -247,8 +247,8 @@ def test_validation_error_response_defaults():
 
     assert response.success is False
     assert response.status_code == 422
-    assert response.error_code == "VALIDATION_ERROR"
-    assert response.error_category == "VALIDATION"
+    assert response.error_code == "invalid_input"
+    assert response.error_category == "validation"
 
 
 def test_validation_error_response_with_errors():
