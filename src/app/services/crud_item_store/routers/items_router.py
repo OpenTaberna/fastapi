@@ -15,7 +15,7 @@ from app.shared.exceptions import entity_not_found
 from app.shared.responses import PaginatedResponse, PageInfo
 from ..models import ItemCreate, ItemStatus, ItemUpdate
 from ..responses import ItemResponse
-from ..responses.docs import (
+from ..responses.item_docs import (
     CREATE_ITEM_RESPONSES,
     GET_ITEM_RESPONSES,
     LIST_ITEMS_RESPONSES,
@@ -30,7 +30,9 @@ from ..functions import (
     validate_update_conflicts,
     prepare_item_update_data,
 )
+from app.shared.logger import get_logger
 
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -87,6 +89,7 @@ async def create_item(
         custom=item.custom,
         system=item.system.model_dump(),
     )
+    logger.info("Item created", extra={"uuid": str(created.uuid), "sku": created.sku})
     return db_to_response(created)
 
 
@@ -117,6 +120,7 @@ async def get_item(
         DatabaseError (500): If database operation fails
     """
     repo = get_item_repository(session)
+    logger.debug("Fetching item", extra={"uuid": str(item_uuid)})
     item = await repo.get(item_uuid)
 
     if not item:
@@ -159,6 +163,14 @@ async def list_items(
         DatabaseError (500): If database operation fails
     """
     repo = get_item_repository(session)
+    logger.debug(
+        "Listing items",
+        extra={
+            "skip": skip,
+            "limit": limit,
+            "status": status_filter.value if status_filter else None,
+        },
+    )
 
     # Apply filters
     filters = {}
@@ -211,6 +223,7 @@ async def get_item_by_sku(
         DatabaseError (500): If database operation fails
     """
     repo = get_item_repository(session)
+    logger.debug("Fetching item by SKU", extra={"sku": sku})
     item = await repo.get_by(sku=sku)
 
     if not item:
@@ -265,6 +278,7 @@ async def update_item(
 
     # Update item
     updated = await repo.update(item_uuid, **update_data)
+    logger.info("Item updated", extra={"uuid": str(item_uuid)})
     return db_to_response(updated)
 
 
@@ -298,3 +312,4 @@ async def delete_item(
         raise entity_not_found("Item", item_uuid)
 
     await repo.delete(item_uuid)
+    logger.info("Item deleted", extra={"uuid": str(item_uuid)})

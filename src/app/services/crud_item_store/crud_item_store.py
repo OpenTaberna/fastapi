@@ -19,7 +19,7 @@ Usage:
 from fastapi import APIRouter
 
 # Import routers
-from .routers import items
+from .routers import items_router
 
 # Create the main router for this service
 router = APIRouter(
@@ -28,6 +28,6 @@ router = APIRouter(
 )
 
 # Include sub-routers
-router.include_router(items.router)
+router.include_router(items_router.router)
 
 __all__ = ["router"]
