@@ -153,7 +153,7 @@ Kein Feature-Endpunkt ohne diese Grundlage. Beide können parallel arbeiten.
 
 > Nach Phase 1: funktionierender Webshop der Geld einnehmen und Stock sicher reservieren kann.
 
-**Fortschritt:** `[ ] 1.1` `[ ] 1.2` `[ ] 1.3` `[ ] 1.4` `[ ] 1.5`
+**Fortschritt:** `[ ] 1.1` `[ ] 1.2` `[ ] 1.3` `[x] 1.4` `[ ] 1.5`
 
 ---
 
