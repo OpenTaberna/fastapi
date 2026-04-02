@@ -1,3 +1,6 @@
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
 [project]
 name = "fastapi-opentaberna"
 version = "0.1.0"
