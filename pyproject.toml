@@ -1,5 +1,9 @@
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [
+    "integration: marks tests as integration tests (require running services)",
+    "slow: marks tests as slow",
+]
 
 [project]
 name = "fastapi-opentaberna"
@@ -16,12 +20,20 @@ dependencies = [
     "fastapi>=0.135.3",
     "pydantic-settings>=2.13.1",
     "pydantic>=2.12.5",
-    "pytest-asyncio>=1.3.0",
-    "pytest>=9.0.2",
     "python-dotenv>=1.2.2",
     "python-keycloak>=7.1.1",
-    "ruff>=0.15.8",
     "sqlalchemy[asyncio]>=2.0.48",
     "stripe>=15.0.1",
     "uvicorn>=0.42.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
+    "pytest-cov>=6.0.0",
+    "requests>=2.32.0",
+]
+dev = [
+    "ruff>=0.15.8",
 ]

@@ -9,8 +9,9 @@ import uuid
 import pytest
 import requests
 
-# API base URL - adjust if your API is on a different host/port
-API_BASE_URL = "http://172.20.20.21:8001/v1/items"
+# API base URL — override with TEST_API_URL env var if needed
+import os
+API_BASE_URL = os.getenv("TEST_API_URL", "http://localhost:8000") + "/v1/items"
 
 
 @pytest.fixture
@@ -67,6 +68,7 @@ def created_item(valid_item_data):
     requests.delete(f"{API_BASE_URL}/{item['uuid']}")
 
 
+@pytest.mark.integration
 class TestItemCRUD:
     """Test CRUD operations on items."""
 
@@ -198,6 +200,7 @@ class TestItemCRUD:
         assert response.status_code == 404
 
 
+@pytest.mark.integration
 class TestValidation:
     """Test API validation."""
 
