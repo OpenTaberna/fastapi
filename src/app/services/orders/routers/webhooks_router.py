@@ -40,7 +40,7 @@ from ..functions import (
     handle_payment_failed,
     handle_payment_succeeded,
 )
-from ..responses.order_docs import STRIPE_WEBHOOK_RESPONSES
+from ..responses import STRIPE_WEBHOOK_RESPONSES
 from ..services import get_order_repository
 
 logger = get_logger(__name__)
