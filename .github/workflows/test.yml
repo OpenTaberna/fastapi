@@ -23,42 +23,15 @@ on:
 env:
   PYTHON_VERSION: '3.12'
   UV_VERSION: '0.4.0'
+  TEST_API_URL: 'http://localhost:8000'
 
 jobs:
   # Job 1: Unit and Integration Tests with Full Service Stack
   test:
     name: Run Tests with Services
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 15
     
-    # Service containers for testing
-    services:
-      # PostgreSQL for main database
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_PASSWORD: test_password
-          POSTGRES_DB: opentaberna_test
-          POSTGRES_USER: test_user
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd="pg_isready -U test_user"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-      
-      # Redis for caching and Celery
-      redis:
-        image: redis:8-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd="redis-server --version"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-      
     steps:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
@@ -68,13 +41,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: � Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client redis-tools
-          echo "✅ System dependencies installed"
-
-      - name: �📦 Install uv
+      - name: 📦 Install uv
         uses: astral-sh/setup-uv@v4
         with:
           version: ${{ env.UV_VERSION }}
@@ -85,67 +52,66 @@ jobs:
           uv sync --extra test
           echo "✅ Dependencies installed"
 
-      - name: 🗄️ Wait for services to be ready
-        run: |
-          echo "⏳ Waiting for services to be healthy..."
-          
-          # Wait longer for all services to be ready
-          for i in {1..30}; do
-            echo "Attempt $i/30..."
-            
-            # Check PostgreSQL
-            if pg_isready -h 127.0.0.1 -p 5432 -U test_user 2>/dev/null; then
-              echo "✅ PostgreSQL is ready"
-              PG_READY=1
-            fi
-            
-            # Check Redis
-            if redis-cli -h 127.0.0.1 -p 6379 ping 2>/dev/null | grep -q PONG; then
-              echo "✅ Redis is ready"
-              REDIS_READY=1
-            fi
-            
-            # All services ready?
-            if [ "$PG_READY" = "1" ] && [ "$REDIS_READY" = "1" ]; then
-              echo "✅ All services are ready!"
-              exit 0
-            fi
-            
-            sleep 2
-          done
-          
-          echo "❌ Timeout waiting for services"
-          exit 1
-
       - name: 🔐 Create test environment file
         run: |
           cat << EOF > .env
-          # Database Configuration
-          DATABASE_URL=postgresql+asyncpg://test_user:test_password@127.0.0.1:5432/opentaberna_test
-          
-          # Redis Configuration
-          REDIS_URL=redis://127.0.0.1:6379/0
-          
-          # Keycloak Configuration (from secrets)
-          KEYCLOAK_URL=${{ secrets.TEST_KEYCLOAK_URL }}
-          REALM=${{ secrets.TEST_REALM }}
-          CLIENT_ID=${{ secrets.TEST_CLIENT_ID }}
-          CLIENT_SECRET=${{ secrets.TEST_CLIENT_SECRET }}
-          
-          # Logging
+          DATABASE_URL=postgresql+asyncpg://opentaberna:opentaberna_password@localhost:5432/opentaberna
+          REDIS_URL=redis://localhost:6379/0
+          KEYCLOAK_URL=http://localhost:8080
+          KEYCLOAK_REALM=opentaberna
+          KEYCLOAK_CLIENT_ID=opentaberna-api
+          KEYCLOAK_CLIENT_SECRET=opentaberna-secret
+          STRIPE_SECRET_KEY=sk_test_placeholder
+          STRIPE_WEBHOOK_SECRET=whsec_placeholder
           LOG_LEVEL=${{ github.event.inputs.log_level || 'INFO' }}
           EOF
-          
           echo "✅ Test environment file created"
 
-      - name: 🗄️ Initialize databases
+      - name: 🔧 Install system tools
+        run: sudo apt-get install -y postgresql-client redis-tools
+
+      - name: 🐳 Start services (DB, Redis, Keycloak)
         run: |
-          echo "🔧 Setting up test databases..."
-          
-          # Verify connection and show tables
-          PGPASSWORD=test_password psql -h 127.0.0.1 -p 5432 -U test_user -d opentaberna_test -c "\dt" || true
-          
-          echo "✅ Databases initialized"
+          mkdir -p postgres_data redis_data
+          docker compose -f docker-compose.dev.yml up opentaberna-db opentaberna-redis opentaberna-keycloak -d
+          echo "✅ Services started"
+
+      - name: 🗄️ Wait for backing services
+        run: |
+          echo "⏳ Waiting for DB, Redis and Keycloak..."
+
+          for i in {1..40}; do
+            echo "Attempt $i/40..."
+
+            pg_isready -h localhost -p 5432 -U opentaberna 2>/dev/null && PG_READY=1 && echo "✅ Postgres ready"
+            redis-cli -h localhost -p 6379 ping 2>/dev/null | grep -q PONG && REDIS_READY=1 && echo "✅ Redis ready"
+            curl -sf http://localhost:8080/realms/opentaberna/.well-known/openid-configuration > /dev/null 2>&1 && KC_READY=1 && echo "✅ Keycloak ready"
+
+            [ "$PG_READY" = "1" ] && [ "$REDIS_READY" = "1" ] && [ "$KC_READY" = "1" ] && echo "✅ All backing services ready!" && exit 0
+
+            sleep 5
+          done
+
+          echo "❌ Timeout"
+          docker compose -f docker-compose.dev.yml logs --tail=50
+          exit 1
+
+      - name: 🚀 Start API locally
+        run: |
+          sudo apt-get install -y postgresql-client redis-tools
+          source .venv/bin/activate
+          PYTHONPATH=src uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          echo "✅ API started (PID $!)"
+
+      - name: ⏳ Wait for API
+        run: |
+          for i in {1..20}; do
+            curl -sf http://localhost:8000/openapi.json > /dev/null 2>&1 && echo "✅ API ready" && exit 0
+            echo "Attempt $i/20..."
+            sleep 3
+          done
+          echo "❌ API did not start"
+          exit 1
 
       - name: 🧪 Run unit tests
         run: |
@@ -160,7 +126,6 @@ jobs:
           echo "🔗 Running integration tests..."
           pytest tests/ -v --tb=short --color=yes -m "integration"
           echo "✅ Integration tests completed"
-        continue-on-error: true
 
       - name: 📊 Generate coverage report
         if: always()
@@ -454,5 +419,6 @@ jobs:
           echo "## Test Environment" >> $GITHUB_STEP_SUMMARY
           echo "- PostgreSQL 17 ✅" >> $GITHUB_STEP_SUMMARY
           echo "- Redis 8 ✅" >> $GITHUB_STEP_SUMMARY
+          echo "- Keycloak 26.2 ✅" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Ready for deployment! 🚀" >> $GITHUB_STEP_SUMMARY

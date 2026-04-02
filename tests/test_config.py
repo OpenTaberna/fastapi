@@ -68,8 +68,9 @@ class TestSecretLoader:
 class TestSettings:
     """Test Settings class."""
 
-    def test_default_settings(self):
-        """Test default settings values."""
+    def test_default_settings(self, monkeypatch, tmp_path):
+        """Test default settings values without any .env file override."""
+        monkeypatch.chdir(tmp_path)
         settings = Settings()
 
         assert settings.app_name == "OpenTaberna API"

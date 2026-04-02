@@ -144,4 +144,5 @@ cython_debug/
 .env.test
 
 # postgresql db directory
-opentaberna-postgres
+postgres_data/
+redis_data/
