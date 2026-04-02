@@ -5,8 +5,8 @@ Exports all Pydantic models and database models for the item-store service.
 Response models are in the responses/ directory.
 """
 
-from .database import ItemDB
-from .item import (
+from .item_db_models import ItemDB
+from .item_models import (
     DimensionUnit,
     DimensionsModel,
     IdentifiersModel,

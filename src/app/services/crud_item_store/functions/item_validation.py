@@ -8,8 +8,11 @@ from typing import Any, Optional
 from uuid import UUID
 
 from app.shared.exceptions import duplicate_entry
+from app.shared.logger import get_logger
 from ..models import ItemDB
 from ..services import ItemRepository
+
+logger = get_logger(__name__)
 
 
 async def check_duplicate_field(
@@ -44,6 +47,13 @@ async def check_duplicate_field(
         >>> # Can check any field on the model
         >>> await check_duplicate_field(repo, "name", "Test Product")
     """
+    logger.debug(
+        "Checking for duplicate field value",
+        extra={
+            "field_name": field_name,
+            "exclude_uuid": str(exclude_uuid) if exclude_uuid else None,
+        },
+    )
     # Use the repository's generic field_exists method
     # This will raise ValueError if field doesn't exist on the model
     exists = await repo.field_exists(field_name, field_value, exclude_uuid=exclude_uuid)

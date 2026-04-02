@@ -9,6 +9,7 @@ dependencies = [
     "asyncpg>=0.31.0",
     "authlib>=1.6.5",
     "cryptography>=46.0.3",
+    "email-validator>=2.2.0",
     "fastapi>=0.124.0",
     "pydantic-settings>=2.12.0",
     "pydantic>=2.12.5",
