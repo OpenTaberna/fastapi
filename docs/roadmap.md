@@ -138,7 +138,7 @@ Kein Feature-Endpunkt ohne diese Grundlage. Beide können parallel arbeiten.
 | → dann: **0.3** Order + OrderItem — abhängig von 0.1 + 0.2 | |
 | **0.4** Payment-Modell + Migration | **0.6** Shipment-Modell + Migration |
 
-**Fortschritt:** `[ ] 0.1` `[ ] 0.2` `[ ] 0.3` `[ ] 0.4` `[ ] 0.5` `[ ] 0.6`
+**Fortschritt:** `[x] 0.1` `[x] 0.2` `[x] 0.3` `[x] 0.4` `[x] 0.5` `[x] 0.6`
 
 ---
 
