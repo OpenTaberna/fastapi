@@ -137,6 +137,28 @@ class Settings(BaseSettings):
         default=60, description="Rate limit requests per minute"
     )
 
+    # Stripe
+    stripe_secret_key: str = Field(
+        default="CHANGE_ME_IN_PRODUCTION",
+        description="Stripe secret key (sk_test_... or sk_live_...)",
+    )
+    stripe_webhook_secret: str = Field(
+        default="CHANGE_ME_IN_PRODUCTION",
+        description="Stripe webhook signing secret (whsec_...)",
+    )
+    stripe_publishable_key: str = Field(
+        default="",
+        description="Stripe publishable key (pk_test_... or pk_live_...)",
+    )
+    stripe_payment_methods: list[str] = Field(
+        default=["card", "paypal", "bank_transfer"],
+        description="Enabled payment methods: card | paypal | bank_transfer",
+    )
+    stripe_bank_transfer_country: str = Field(
+        default="DE",
+        description="ISO 3166-1 alpha-2 country for EU bank transfer virtual IBAN",
+    )
+
     # Feature Flags
     feature_webhooks_enabled: bool = Field(default=False, description="Enable webhooks")
 
@@ -172,6 +194,22 @@ class Settings(BaseSettings):
         if v:
             return v
         return load_secret("keycloak_client_secret") or v or ""
+
+    @field_validator("stripe_secret_key", mode="before")
+    @classmethod
+    def load_stripe_secret_key(cls, v: str | None) -> str:
+        """Load Stripe secret key from secrets if available."""
+        if v:
+            return v
+        return load_secret("stripe_secret_key") or v or "CHANGE_ME_IN_PRODUCTION"
+
+    @field_validator("stripe_webhook_secret", mode="before")
+    @classmethod
+    def load_stripe_webhook_secret(cls, v: str | None) -> str:
+        """Load Stripe webhook secret from secrets if available."""
+        if v:
+            return v
+        return load_secret("stripe_webhook_secret") or v or "CHANGE_ME_IN_PRODUCTION"
 
     def model_post_init(self, __context: Any) -> None:
         """Post-initialization processing."""
