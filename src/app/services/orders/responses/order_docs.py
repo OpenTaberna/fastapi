@@ -1,0 +1,189 @@
+"""
+OpenAPI Documentation for Orders Endpoints
+
+All error examples are built programmatically from actual response model
+instances so they can never drift from the real API output.
+"""
+
+from app.shared.responses import ErrorResponse, ValidationErrorResponse
+
+
+# ---------------------------------------------------------------------------
+# Helpers (mirrors item_docs.py)
+# ---------------------------------------------------------------------------
+
+
+def _err(
+    status: int, code: str, category: str, message: str, details: dict | None = None
+) -> dict:
+    """Build an error example dict from an actual ErrorResponse instance."""
+    return ErrorResponse(
+        status_code=status,
+        error_code=code,
+        error_category=category,
+        message=message,
+        details=details,
+    ).model_dump(mode="json", exclude_none=True)
+
+
+def _validation_err(message: str, errors: list[dict]) -> dict:
+    """Build a validation error example dict."""
+    return ValidationErrorResponse(
+        message=message,
+        validation_errors=errors,
+    ).model_dump(mode="json", exclude_none=True)
+
+
+# ---------------------------------------------------------------------------
+# Shared error examples
+# ---------------------------------------------------------------------------
+
+INVALID_UUID_EXAMPLE = _validation_err(
+    message="Validation failed",
+    errors=[
+        {
+            "loc": ["path", "id"],
+            "msg": "Input should be a valid UUID",
+            "type": "uuid_parsing",
+        }
+    ],
+)
+
+ORDER_NOT_FOUND_EXAMPLE = _err(
+    status=404,
+    code="entity_not_found",
+    category="not_found",
+    message="Order with ID '123e4567-e89b-12d3-a456-426614174000' not found",
+    details={
+        "entity_type": "Order",
+        "entity_id": "123e4567-e89b-12d3-a456-426614174000",
+    },
+)
+
+ORDER_ACCESS_DENIED_EXAMPLE = _err(
+    status=403,
+    code="access_denied",
+    category="authorization",
+    message="You do not have permission to access this order",
+    details={"resource": "Order", "action": "access"},
+)
+
+ORDER_NOT_DRAFT_EXAMPLE = _err(
+    status=400,
+    code="invalid_state",
+    category="business_rule",
+    message="Order cannot transition from 'pending_payment' to 'cancelled'. "
+    "Allowed transitions: ['paid', 'cancelled'].",
+    details={"current_state": "pending_payment"},
+)
+
+ORDER_CHECKOUT_CONFLICT_EXAMPLE = _err(
+    status=400,
+    code="invalid_state",
+    category="business_rule",
+    message="Order cannot transition from 'paid' to 'pending_payment'. "
+    "Allowed transitions: ['ready_to_ship'].",
+    details={"current_state": "paid"},
+)
+
+DATABASE_ERROR_EXAMPLE = _err(
+    status=500,
+    code="database_query_error",
+    category="database",
+    message="Database operation failed",
+    details={"error_type": "DatabaseError"},
+)
+
+INTERNAL_ERROR_EXAMPLE = _err(
+    status=500,
+    code="internal_error",
+    category="internal",
+    message="An unexpected error occurred",
+    details={"error_type": "ValueError"},
+)
+
+# ---------------------------------------------------------------------------
+# Per-endpoint response dictionaries
+# ---------------------------------------------------------------------------
+
+_422 = {
+    422: {
+        "description": "Validation Error",
+        "content": {"application/json": {"example": INVALID_UUID_EXAMPLE}},
+    }
+}
+_500 = {
+    500: {
+        "description": "Internal Server Error",
+        "content": {"application/json": {"example": DATABASE_ERROR_EXAMPLE}},
+    }
+}
+
+CREATE_ORDER_RESPONSES: dict = {
+    **_422,
+    **_500,
+}
+
+GET_ORDER_RESPONSES: dict = {
+    403: {
+        "description": "Forbidden – order belongs to another customer",
+        "content": {"application/json": {"example": ORDER_ACCESS_DENIED_EXAMPLE}},
+    },
+    404: {
+        "description": "Order not found",
+        "content": {"application/json": {"example": ORDER_NOT_FOUND_EXAMPLE}},
+    },
+    **_422,
+    **_500,
+}
+
+CANCEL_ORDER_RESPONSES: dict = {
+    400: {
+        "description": "Order is not in DRAFT status",
+        "content": {"application/json": {"example": ORDER_NOT_DRAFT_EXAMPLE}},
+    },
+    403: {
+        "description": "Forbidden – order belongs to another customer",
+        "content": {"application/json": {"example": ORDER_ACCESS_DENIED_EXAMPLE}},
+    },
+    404: {
+        "description": "Order not found",
+        "content": {"application/json": {"example": ORDER_NOT_FOUND_EXAMPLE}},
+    },
+    **_422,
+    **_500,
+}
+
+CHECKOUT_ORDER_RESPONSES: dict = {
+    400: {
+        "description": "Order is not in DRAFT status",
+        "content": {"application/json": {"example": ORDER_CHECKOUT_CONFLICT_EXAMPLE}},
+    },
+    403: {
+        "description": "Forbidden – order belongs to another customer",
+        "content": {"application/json": {"example": ORDER_ACCESS_DENIED_EXAMPLE}},
+    },
+    404: {
+        "description": "Order not found",
+        "content": {"application/json": {"example": ORDER_NOT_FOUND_EXAMPLE}},
+    },
+    **_422,
+    **_500,
+}
+
+STRIPE_WEBHOOK_RESPONSES: dict = {
+    400: {
+        "description": "Invalid Stripe signature",
+        "content": {
+            "application/json": {
+                "example": _err(
+                    status=400,
+                    code="operation_not_allowed",
+                    category="business_rule",
+                    message="Invalid Stripe webhook signature",
+                )
+            }
+        },
+    },
+    **_500,
+}
