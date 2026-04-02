@@ -17,8 +17,8 @@ are replaced with MagicMocks so tests run without credentials.
 
 import pytest
 import stripe
-from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import UUID, uuid4
+from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 from app.services.payments.adapters import (
     PaymentMethod,
@@ -262,12 +262,16 @@ class TestBuildBankTransferOptions:
 
     def test_country_is_passed_through(self):
         opts = _build_bank_transfer_options("NL")
-        country = opts["customer_balance"]["bank_transfer"]["eu_bank_transfer"]["country"]
+        country = opts["customer_balance"]["bank_transfer"]["eu_bank_transfer"][
+            "country"
+        ]
         assert country == "NL"
 
     def test_different_country(self):
         opts = _build_bank_transfer_options("FR")
-        country = opts["customer_balance"]["bank_transfer"]["eu_bank_transfer"]["country"]
+        country = opts["customer_balance"]["bank_transfer"]["eu_bank_transfer"][
+            "country"
+        ]
         assert country == "FR"
 
 
@@ -328,7 +332,11 @@ class TestStripeAdapterInit:
         assert isinstance(adapter_all, PaymentProviderAdapter)
 
     def test_all_methods_mapped_to_stripe_strings(self, adapter_all):
-        assert adapter_all._stripe_method_types == ["card", "paypal", "customer_balance"]
+        assert adapter_all._stripe_method_types == [
+            "card",
+            "paypal",
+            "customer_balance",
+        ]
 
     def test_card_only_excludes_paypal_and_bank_transfer(self, adapter_card):
         assert adapter_card._stripe_method_types == ["card"]
@@ -558,12 +566,15 @@ class TestStripeAdapterParseWebhookEvent:
         obj.id = "pi_test_007"
         fake_event = _make_stripe_event("payment_intent.succeeded", obj)
 
-        with patch(
-            "app.services.payments.adapters.stripe_adapter.asyncio.to_thread",
-            side_effect=fake_to_thread,
-        ), patch(
-            "app.services.payments.adapters.stripe_adapter.stripe.Webhook.construct_event",
-            return_value=fake_event,
+        with (
+            patch(
+                "app.services.payments.adapters.stripe_adapter.asyncio.to_thread",
+                side_effect=fake_to_thread,
+            ),
+            patch(
+                "app.services.payments.adapters.stripe_adapter.stripe.Webhook.construct_event",
+                return_value=fake_event,
+            ),
         ):
             result = await adapter_card.parse_webhook_event(
                 raw_payload=b'{"id":"evt_1"}',
@@ -583,12 +594,15 @@ class TestStripeAdapterParseWebhookEvent:
         obj.payment_intent = "pi_test_charge"
         fake_event = _make_stripe_event("charge.succeeded", obj)
 
-        with patch(
-            "app.services.payments.adapters.stripe_adapter.asyncio.to_thread",
-            side_effect=fake_to_thread,
-        ), patch(
-            "app.services.payments.adapters.stripe_adapter.stripe.Webhook.construct_event",
-            return_value=fake_event,
+        with (
+            patch(
+                "app.services.payments.adapters.stripe_adapter.asyncio.to_thread",
+                side_effect=fake_to_thread,
+            ),
+            patch(
+                "app.services.payments.adapters.stripe_adapter.stripe.Webhook.construct_event",
+                return_value=fake_event,
+            ),
         ):
             result = await adapter_card.parse_webhook_event(
                 raw_payload=b"{}",
@@ -597,20 +611,21 @@ class TestStripeAdapterParseWebhookEvent:
 
         assert result.provider_reference == "pi_test_charge"
 
-    async def test_raw_payload_included_in_result(
-        self, adapter_card, fake_to_thread
-    ):
+    async def test_raw_payload_included_in_result(self, adapter_card, fake_to_thread):
         obj = MagicMock()
         obj.id = "pi_abc"
         fake_event = _make_stripe_event("payment_intent.succeeded", obj)
         fake_event.to_dict.return_value = {"id": "evt_test_001", "amount": 500}
 
-        with patch(
-            "app.services.payments.adapters.stripe_adapter.asyncio.to_thread",
-            side_effect=fake_to_thread,
-        ), patch(
-            "app.services.payments.adapters.stripe_adapter.stripe.Webhook.construct_event",
-            return_value=fake_event,
+        with (
+            patch(
+                "app.services.payments.adapters.stripe_adapter.asyncio.to_thread",
+                side_effect=fake_to_thread,
+            ),
+            patch(
+                "app.services.payments.adapters.stripe_adapter.stripe.Webhook.construct_event",
+                return_value=fake_event,
+            ),
         ):
             result = await adapter_card.parse_webhook_event(
                 raw_payload=b"{}", signature_header="t=1,v1=x"
@@ -622,12 +637,15 @@ class TestStripeAdapterParseWebhookEvent:
         self, adapter_card, fake_to_thread
     ):
         """stripe.SignatureVerificationError must become WebhookSignatureError."""
-        with patch(
-            "app.services.payments.adapters.stripe_adapter.asyncio.to_thread",
-            side_effect=fake_to_thread,
-        ), patch(
-            "app.services.payments.adapters.stripe_adapter.stripe.Webhook.construct_event",
-            side_effect=stripe.SignatureVerificationError("bad sig", b""),
+        with (
+            patch(
+                "app.services.payments.adapters.stripe_adapter.asyncio.to_thread",
+                side_effect=fake_to_thread,
+            ),
+            patch(
+                "app.services.payments.adapters.stripe_adapter.stripe.Webhook.construct_event",
+                side_effect=stripe.SignatureVerificationError("bad sig", b""),
+            ),
         ):
             with pytest.raises(WebhookSignatureError) as exc_info:
                 await adapter_card.parse_webhook_event(
@@ -640,12 +658,15 @@ class TestStripeAdapterParseWebhookEvent:
         self, adapter_card, fake_to_thread
     ):
         """Any non-signature exception during parsing becomes PaymentProviderError."""
-        with patch(
-            "app.services.payments.adapters.stripe_adapter.asyncio.to_thread",
-            side_effect=fake_to_thread,
-        ), patch(
-            "app.services.payments.adapters.stripe_adapter.stripe.Webhook.construct_event",
-            side_effect=ValueError("unexpected payload"),
+        with (
+            patch(
+                "app.services.payments.adapters.stripe_adapter.asyncio.to_thread",
+                side_effect=fake_to_thread,
+            ),
+            patch(
+                "app.services.payments.adapters.stripe_adapter.stripe.Webhook.construct_event",
+                side_effect=ValueError("unexpected payload"),
+            ),
         ):
             with pytest.raises(PaymentProviderError) as exc_info:
                 await adapter_card.parse_webhook_event(
@@ -661,9 +682,7 @@ class TestStripeAdapterParseWebhookEvent:
 
 
 class TestStripeAdapterCancelPaymentIntent:
-    async def test_happy_path_returns_none(
-        self, adapter_card, fake_to_thread
-    ):
+    async def test_happy_path_returns_none(self, adapter_card, fake_to_thread):
         """Successful cancellation returns None."""
         adapter_card._client.v1.payment_intents.cancel = MagicMock(return_value=None)
 
@@ -675,9 +694,7 @@ class TestStripeAdapterCancelPaymentIntent:
 
         assert result is None
 
-    async def test_correct_provider_reference_sent(
-        self, adapter_card, fake_to_thread
-    ):
+    async def test_correct_provider_reference_sent(self, adapter_card, fake_to_thread):
         """The provider_reference must be forwarded to the Stripe SDK unchanged."""
         adapter_card._client.v1.payment_intents.cancel = MagicMock(return_value=None)
 
