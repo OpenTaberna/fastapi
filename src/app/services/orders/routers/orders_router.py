@@ -39,7 +39,7 @@ from ..models import (
     OrderItemDB,
     OrderStatus,
 )
-from ..responses.order_docs import (
+from ..responses import (
     CANCEL_ORDER_RESPONSES,
     CHECKOUT_ORDER_RESPONSES,
     CREATE_ORDER_RESPONSES,
