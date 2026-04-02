@@ -19,5 +19,6 @@ dependencies = [
     "python-keycloak>=5.8.1",
     "ruff>=0.14.8",
     "sqlalchemy[asyncio]>=2.0.44",
+    "stripe>=7.0.0",
     "uvicorn>=0.38.0",
 ]
