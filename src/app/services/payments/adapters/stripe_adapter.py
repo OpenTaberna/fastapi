@@ -127,7 +127,7 @@ class StripeAdapter(PaymentProviderAdapter):
 
         try:
             intent = await asyncio.to_thread(
-                self._client.payment_intents.create,
+                self._client.v1.payment_intents.create,
                 params=params,
             )
         except stripe.StripeError as exc:
@@ -246,7 +246,7 @@ class StripeAdapter(PaymentProviderAdapter):
 
         try:
             await asyncio.to_thread(
-                self._client.payment_intents.cancel,
+                self._client.v1.payment_intents.cancel,
                 provider_reference,
             )
         except stripe.StripeError as exc:
