@@ -74,9 +74,7 @@ class StripeAdapter(PaymentProviderAdapter):
         """
         self._client = stripe.StripeClient(api_key=secret_key)
         self._webhook_secret = webhook_secret
-        self._stripe_method_types = [
-            _STRIPE_METHOD_MAP[m] for m in payment_methods
-        ]
+        self._stripe_method_types = [_STRIPE_METHOD_MAP[m] for m in payment_methods]
         self._bank_transfer_country = bank_transfer_country.upper()
         self._has_bank_transfer = PaymentMethod.BANK_TRANSFER in payment_methods
 
