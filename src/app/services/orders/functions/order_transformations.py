@@ -66,8 +66,9 @@ def db_to_checkout_response(
     """
     Convert an OrderDB + its OrderItemDB rows into a CheckoutResponse.
 
-    Identical to db_to_order_detail_response but includes the PSP client_secret
-    token returned to the frontend after a successful PaymentIntent creation.
+    Composes db_to_order_detail_response and extends the result with the PSP
+    client_secret token returned to the frontend after a successful PaymentIntent
+    creation.
 
     Args:
         order:         SQLAlchemy OrderDB instance (status=PENDING_PAYMENT).
@@ -77,16 +78,5 @@ def db_to_checkout_response(
     Returns:
         CheckoutResponse with nested line items and the client_secret.
     """
-    order_dict = {
-        "id": order.id,
-        "customer_id": order.customer_id,
-        "status": order.status,
-        "total_amount": order.total_amount,
-        "currency": order.currency,
-        "created_at": order.created_at,
-        "updated_at": order.updated_at,
-        "deleted_at": order.deleted_at,
-        "items": [OrderItemResponse.model_validate(item) for item in items],
-        "client_secret": client_secret,
-    }
-    return CheckoutResponse.model_validate(order_dict)
+    detail = db_to_order_detail_response(order, items)
+    return CheckoutResponse(**detail.model_dump(), client_secret=client_secret)
