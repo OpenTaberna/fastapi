@@ -97,11 +97,36 @@ ORDER_INSUFFICIENT_STOCK_EXAMPLE = _err(
     },
 )
 
+ITEM_NOT_FOUND_EXAMPLE = _err(
+    status=404,
+    code="entity_not_found",
+    category="not_found",
+    message="Item with ID 'CHAIR-RED-001' not found",
+    details={"entity_type": "Item", "entity_id": "CHAIR-RED-001"},
+)
+
+ITEM_NO_PRICE_EXAMPLE = _err(
+    status=400,
+    code="operation_not_allowed",
+    category="business_rule",
+    message=(
+        "Operation not allowed: create_order - Item 'CHAIR-RED-001' has no "
+        "valid price in catalogue (expected JSONB price.amount in cents)"
+    ),
+    details={
+        "operation": "create_order",
+        "reason": (
+            "Item 'CHAIR-RED-001' has no valid price in catalogue "
+            "(expected JSONB price.amount in cents)"
+        ),
+    },
+)
+
 PSP_ERROR_EXAMPLE = _err(
     status=502,
-    code="external_service_unavailable",
+    code="external_service_error",
     category="external_service",
-    message="External service unavailable: Stripe",
+    message="PSP call failed: Stripe PaymentIntent creation failed",
     details={"service_name": "Stripe"},
 )
 
@@ -111,6 +136,21 @@ DATABASE_ERROR_EXAMPLE = _err(
     category="database",
     message="Database operation failed",
     details={"error_type": "DatabaseError"},
+)
+
+WEBHOOK_MISSING_SIG_EXAMPLE = _err(
+    status=400,
+    code="operation_not_allowed",
+    category="business_rule",
+    message="Operation not allowed: stripe_webhook - Missing Stripe-Signature header",
+    details={"operation": "stripe_webhook", "reason": "Missing Stripe-Signature header"},
+)
+
+WEBHOOK_INVALID_SIG_EXAMPLE = _err(
+    status=422,
+    code="invalid_format",
+    category="validation",
+    message="Stripe webhook signature verification failed",
 )
 
 # ---------------------------------------------------------------------------
@@ -131,6 +171,14 @@ _500 = {
 }
 
 CREATE_ORDER_RESPONSES: dict = {
+    400: {
+        "description": "Business rule violation: catalogue item has no valid price",
+        "content": {"application/json": {"example": ITEM_NO_PRICE_EXAMPLE}},
+    },
+    404: {
+        "description": "Requested SKU not found in the item catalogue",
+        "content": {"application/json": {"example": ITEM_NOT_FOUND_EXAMPLE}},
+    },
     **_422,
     **_500,
 }
@@ -204,17 +252,12 @@ CHECKOUT_ORDER_RESPONSES: dict = {
 
 STRIPE_WEBHOOK_RESPONSES: dict = {
     400: {
-        "description": "Invalid Stripe signature",
-        "content": {
-            "application/json": {
-                "example": _err(
-                    status=400,
-                    code="operation_not_allowed",
-                    category="business_rule",
-                    message="Invalid Stripe webhook signature",
-                )
-            }
-        },
+        "description": "Missing Stripe-Signature header",
+        "content": {"application/json": {"example": WEBHOOK_MISSING_SIG_EXAMPLE}},
+    },
+    422: {
+        "description": "Invalid or expired Stripe HMAC signature",
+        "content": {"application/json": {"example": WEBHOOK_INVALID_SIG_EXAMPLE}},
     },
     **_500,
 }
