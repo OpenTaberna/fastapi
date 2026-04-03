@@ -225,7 +225,7 @@ class TestWebhookHappyPath:
 
     Run with:
         stripe listen --forward-to http://localhost:8001/v1/webhooks/stripe
-        stripe trigger payment_intent.succeeded
+        stripe payment_intents confirm pi_3TIADL9hz8OzCGYW1XXXXXXX --payment-method pm_card_visa
 
     All tests here are skipped in automated runs.
     """
