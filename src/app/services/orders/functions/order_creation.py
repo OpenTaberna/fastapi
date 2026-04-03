@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.crud_item_store.models import ItemDB
-from app.shared.exceptions import entity_not_found
+from app.shared.exceptions import entity_not_found, operation_not_allowed
 from app.shared.logger import get_logger
 
 from ..models import OrderItemCreate
@@ -56,9 +56,18 @@ async def resolve_order_lines(
     total_amount = 0
     resolved_lines: list[tuple[OrderItemCreate, int]] = []
     for line in items:
-        unit_price: int = items_by_sku[line.sku].price[
-            "amount"
-        ]  # JSONB price.amount (cents)
+        price_data = items_by_sku[line.sku].price
+        unit_price = (
+            price_data.get("amount") if isinstance(price_data, dict) else None
+        )
+        if unit_price is None:
+            raise operation_not_allowed(
+                operation="create_order",
+                reason=(
+                    f"Item '{line.sku}' has no valid price in catalogue "
+                    "(expected JSONB price.amount in cents)"
+                ),
+            )
         total_amount += unit_price * line.quantity
         resolved_lines.append((line, unit_price))
 
