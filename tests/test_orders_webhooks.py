@@ -19,20 +19,22 @@ What requires a real Stripe signing secret (manual / CI with stripe-cli):
     - Duplicate event is handled idempotently (200, no double-processing)
 
     To run manually:
-        stripe listen --forward-to http://172.20.20.21:8001/v1/webhooks/stripe
+        stripe listen --forward-to http://localhost:8001/v1/webhooks/stripe
         stripe trigger payment_intent.succeeded
 """
 
 import json
 import subprocess
 import uuid
+import os
 
 import pytest
 import requests
 
-WEBHOOK_URL = "http://172.20.20.21:8001/v1/webhooks/stripe"
-ORDERS_URL = "http://172.20.20.21:8001/v1/orders"
-ITEMS_URL = "http://172.20.20.21:8001/v1/items"
+_BASE = os.getenv("TEST_API_URL", "http://localhost:8001")
+WEBHOOK_URL = f"{_BASE}/v1/webhooks/stripe"
+ORDERS_URL = f"{_BASE}/v1/orders"
+ITEMS_URL = f"{_BASE}/v1/items"
 
 # A well-formed but completely fake Stripe-Signature value.
 # The timestamp and v1 digest will never match any real secret.
@@ -222,7 +224,7 @@ class TestWebhookHappyPath:
     Full end-to-end webhook tests that require a valid Stripe-signed event body.
 
     Run with:
-        stripe listen --forward-to http://172.20.20.21:8001/v1/webhooks/stripe
+        stripe listen --forward-to http://localhost:8001/v1/webhooks/stripe
         stripe trigger payment_intent.succeeded
 
     All tests here are skipped in automated runs.

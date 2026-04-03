@@ -26,12 +26,14 @@ DB note:
 
 import subprocess
 import uuid
+import os
 
 import pytest
 import requests
 
-ORDERS_URL = "http://172.20.20.21:8001/v1/orders"
-ITEMS_URL = "http://172.20.20.21:8001/v1/items"
+_BASE = os.getenv("TEST_API_URL", "http://localhost:8001")
+ORDERS_URL = f"{_BASE}/v1/orders"
+ITEMS_URL = f"{_BASE}/v1/items"
 
 
 # ---------------------------------------------------------------------------
