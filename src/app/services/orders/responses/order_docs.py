@@ -72,9 +72,9 @@ ORDER_NOT_DRAFT_EXAMPLE = _err(
     status=400,
     code="invalid_state",
     category="business_rule",
-    message="Order cannot transition from 'pending_payment' to 'cancelled'. "
-    "Allowed transitions: ['paid', 'cancelled'].",
-    details={"current_state": "pending_payment"},
+    message="Order cannot transition from 'paid' to 'cancelled'. "
+    "Allowed transitions: ['ready_to_ship'].",
+    details={"current_state": "paid"},
 )
 
 ORDER_CHECKOUT_CONFLICT_EXAMPLE = _err(
