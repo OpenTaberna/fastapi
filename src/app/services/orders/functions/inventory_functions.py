@@ -171,8 +171,15 @@ async def release_reservation(session: AsyncSession, order_id: UUID) -> None:
         return
 
     for reservation in reservations:
-        # Load the inventory item (no FOR UPDATE needed — release only decrements)
-        inv = await session.get(InventoryItemDB, reservation.inventory_item_id)
+        # Load the inventory item with a pessimistic lock to prevent
+        # lost-update races when two concurrent releases target the same SKU.
+        inv_stmt = (
+            select(InventoryItemDB)
+            .where(InventoryItemDB.id == reservation.inventory_item_id)
+            .with_for_update()
+        )
+        inv_result = await session.execute(inv_stmt)
+        inv = inv_result.scalar_one_or_none()
         if inv is not None:
             inv.reserved = max(0, inv.reserved - reservation.quantity)
             session.add(inv)
@@ -227,7 +234,15 @@ async def commit_reservation(session: AsyncSession, order_id: UUID) -> None:
         return
 
     for reservation in reservations:
-        inv = await session.get(InventoryItemDB, reservation.inventory_item_id)
+        # Pessimistic lock — same reasoning as reserve_inventory:
+        # concurrent commits / releases for the same SKU must be serialised.
+        inv_stmt = (
+            select(InventoryItemDB)
+            .where(InventoryItemDB.id == reservation.inventory_item_id)
+            .with_for_update()
+        )
+        inv_result = await session.execute(inv_stmt)
+        inv = inv_result.scalar_one_or_none()
         if inv is not None:
             inv.reserved = max(0, inv.reserved - reservation.quantity)
             inv.on_hand = max(0, inv.on_hand - reservation.quantity)
@@ -279,7 +294,13 @@ async def expire_reservations(session: AsyncSession) -> int:
         return 0
 
     for reservation in expired:
-        inv = await session.get(InventoryItemDB, reservation.inventory_item_id)
+        inv_stmt = (
+            select(InventoryItemDB)
+            .where(InventoryItemDB.id == reservation.inventory_item_id)
+            .with_for_update()
+        )
+        inv_result = await session.execute(inv_stmt)
+        inv = inv_result.scalar_one_or_none()
         if inv is not None:
             inv.reserved = max(0, inv.reserved - reservation.quantity)
             session.add(inv)
