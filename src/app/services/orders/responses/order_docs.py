@@ -86,20 +86,31 @@ ORDER_CHECKOUT_CONFLICT_EXAMPLE = _err(
     details={"current_state": "paid"},
 )
 
+ORDER_INSUFFICIENT_STOCK_EXAMPLE = _err(
+    status=400,
+    code="operation_not_allowed",
+    category="business_rule",
+    message="Insufficient stock for SKU 'CHAIR-RED-001': requested 3, available 1",
+    details={
+        "operation": "reserve_inventory",
+        "reason": "Insufficient stock for SKU 'CHAIR-RED-001': requested 3, available 1",
+    },
+)
+
+PSP_ERROR_EXAMPLE = _err(
+    status=502,
+    code="external_service_unavailable",
+    category="external_service",
+    message="External service unavailable: Stripe",
+    details={"service_name": "Stripe"},
+)
+
 DATABASE_ERROR_EXAMPLE = _err(
     status=500,
     code="database_query_error",
     category="database",
     message="Database operation failed",
     details={"error_type": "DatabaseError"},
-)
-
-INTERNAL_ERROR_EXAMPLE = _err(
-    status=500,
-    code="internal_error",
-    category="internal",
-    message="An unexpected error occurred",
-    details={"error_type": "ValueError"},
 )
 
 # ---------------------------------------------------------------------------
@@ -156,8 +167,24 @@ CANCEL_ORDER_RESPONSES: dict = {
 
 CHECKOUT_ORDER_RESPONSES: dict = {
     400: {
-        "description": "Order is not in DRAFT status",
-        "content": {"application/json": {"example": ORDER_CHECKOUT_CONFLICT_EXAMPLE}},
+        "description": (
+            "Business rule violation: order is not in DRAFT status, "
+            "or insufficient stock for a line item"
+        ),
+        "content": {
+            "application/json": {
+                "examples": {
+                    "invalid_status": {
+                        "summary": "Order not in DRAFT status",
+                        "value": ORDER_CHECKOUT_CONFLICT_EXAMPLE,
+                    },
+                    "insufficient_stock": {
+                        "summary": "Insufficient stock",
+                        "value": ORDER_INSUFFICIENT_STOCK_EXAMPLE,
+                    },
+                }
+            }
+        },
     },
     403: {
         "description": "Forbidden – order belongs to another customer",
@@ -166,6 +193,10 @@ CHECKOUT_ORDER_RESPONSES: dict = {
     404: {
         "description": "Order not found",
         "content": {"application/json": {"example": ORDER_NOT_FOUND_EXAMPLE}},
+    },
+    502: {
+        "description": "Payment provider error – PSP API call failed",
+        "content": {"application/json": {"example": PSP_ERROR_EXAMPLE}},
     },
     **_422,
     **_500,
