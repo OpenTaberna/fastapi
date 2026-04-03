@@ -109,9 +109,9 @@ async def stripe_webhook(
         {"received": True}
 
     Raises:
-        BusinessRuleError (400):   Missing Stripe-Signature header.
-        WebhookSignatureError (400): Invalid or expired HMAC signature.
-        DatabaseError (500):       DB operation failure.
+        BusinessRuleError (400):    Missing Stripe-Signature header.
+        WebhookSignatureError (422): Invalid or expired HMAC signature.
+        DatabaseError (500):        DB operation failure.
     """
     # ------------------------------------------------------------------
     # 1. Guard: header must be present
