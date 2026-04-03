@@ -167,7 +167,7 @@ Kein Feature-Endpunkt ohne diese Grundlage. Beide können parallel arbeiten.
 
 > Nach Phase 2: **vollständiges lauffähiges MVP** — zahlender Kunde, korrekter Lagerbestand, manuell versendbar.
 
-**Fortschritt:** `[ ] 2.1` `[ ] 2.2` `[ ] 2.3` `[ ] 2.4`
+**Fortschritt:** `[x] 2.1` `[x] 2.2` `[x] 2.3` `[x] 2.4`
 
 ---
 
