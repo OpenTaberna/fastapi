@@ -6,6 +6,7 @@ Exports ORM models and Pydantic schemas for the orders service.
 
 from .orders_db_models import OrderDB, OrderItemDB
 from .orders_models import (
+    CheckoutResponse,
     OrderBase,
     OrderCreate,
     OrderDetailResponse,
@@ -22,6 +23,7 @@ __all__ = [
     "OrderDB",
     "OrderItemDB",
     # Pydantic schemas
+    "CheckoutResponse",
     "OrderStatus",
     "OrderBase",
     "OrderCreate",

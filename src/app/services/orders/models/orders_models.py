@@ -145,3 +145,18 @@ class OrderDetailResponse(OrderResponse):
         default_factory=list,
         description="Line items of this order",
     )
+
+
+class CheckoutResponse(OrderDetailResponse):
+    """
+    Checkout response — OrderDetailResponse plus the PSP client secret.
+
+    The client_secret is an opaque token issued by the PSP (e.g. a Stripe
+    PaymentIntent client_secret). The frontend passes it to the PSP JavaScript
+    SDK (e.g. Stripe.js / stripe.confirmPayment) to complete the payment UI flow.
+    """
+
+    client_secret: str = Field(
+        ...,
+        description="PSP client secret forwarded to the frontend payment SDK",
+    )

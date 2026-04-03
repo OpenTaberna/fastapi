@@ -162,6 +162,12 @@ class Settings(BaseSettings):
     # Feature Flags
     feature_webhooks_enabled: bool = Field(default=False, description="Enable webhooks")
 
+    # Order reservations
+    reservation_ttl_minutes: int = Field(
+        default=15,
+        description="How long (in minutes) a stock reservation is held before it expires",
+    )
+
     @field_validator("secret_key")
     @classmethod
     def validate_secret_key(cls, v: str, info: Any) -> str:
