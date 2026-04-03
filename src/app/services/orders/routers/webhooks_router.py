@@ -30,7 +30,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.payments.adapters import PaymentProviderAdapter, WebhookEventResult
 from app.services.payments.dependencies import get_payment_adapter
 from app.services.webhooks.models import WebhookEventDB
-from app.services.webhooks.services import get_webhook_event_repository
+from app.services.webhooks.services import (
+    WebhookEventRepository,
+    get_webhook_event_repository,
+)
 from app.shared.database.session import get_session_dependency
 from app.shared.exceptions import operation_not_allowed
 from app.shared.logger import get_logger
@@ -187,7 +190,7 @@ async def stripe_webhook(
 
 async def _record_webhook_event(
     session: AsyncSession,
-    webhook_repo,
+    webhook_repo: WebhookEventRepository,
     event_id: str,
     event: dict,
 ) -> None:
