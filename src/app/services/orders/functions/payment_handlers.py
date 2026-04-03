@@ -18,6 +18,7 @@ from app.shared.logger import get_logger
 
 from .inventory_functions import commit_reservation, release_reservation
 from ..models import OrderStatus
+from ..services import OrderRepository
 
 logger = get_logger(__name__)
 
@@ -61,7 +62,7 @@ def extract_order_id_from_webhook(event: WebhookEventResult) -> UUID | None:
 
 async def handle_payment_succeeded(
     session: AsyncSession,
-    order_repo,
+    order_repo: OrderRepository,
     order_id: UUID,
     event_id: str,
 ) -> None:
@@ -108,7 +109,7 @@ async def handle_payment_succeeded(
 
 async def handle_payment_failed(
     session: AsyncSession,
-    order_repo,
+    order_repo: OrderRepository,
     order_id: UUID,
     event_id: str,
 ) -> None:
