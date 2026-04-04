@@ -35,3 +35,6 @@ from app.services.webhooks.models.webhooks_db_models import WebhookEventDB  # no
 
 # Shipments
 from app.services.shipments.models.shipments_db_models import ShipmentDB  # noqa: F401
+
+# Fulfillment outbox
+from app.services.fulfillment.outbox.models.outbox_db_models import OutboxEventDB  # noqa: F401
