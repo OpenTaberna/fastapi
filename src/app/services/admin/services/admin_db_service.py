@@ -10,12 +10,10 @@ overridden — admin code should use the methods defined here to make it
 explicit that no ownership check is being applied.
 """
 
-from uuid import UUID
-
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.orders.models.orders_db_models import OrderDB, OrderItemDB
+from app.services.orders.models.orders_db_models import OrderDB
 from app.services.orders.models.orders_models import OrderStatus
 from app.shared.database.repository import BaseRepository
 from app.shared.logger import get_logger
@@ -102,31 +100,6 @@ class AdminOrderRepository(BaseRepository[OrderDB]):
         )
         result = await self.session.execute(stmt)
         return result.scalar_one()
-
-    async def get_items_for_orders(self, order_ids: list[UUID]) -> list[OrderItemDB]:
-        """
-        Bulk-fetch all order items belonging to the given order IDs.
-
-        Used when generating pick lists so the entire PAID batch can be
-        loaded in a single query instead of N individual item look-ups.
-
-        Args:
-            order_ids: List of order UUIDs whose items should be fetched.
-
-        Returns:
-            List of OrderItemDB instances for all supplied order IDs.
-            Returns an empty list when order_ids is empty.
-        """
-        logger.debug(
-            "Bulk-fetching order items for pick list",
-            extra={"order_count": len(order_ids)},
-        )
-        if not order_ids:
-            return []
-
-        stmt = select(OrderItemDB).where(OrderItemDB.order_id.in_(order_ids))
-        result = await self.session.execute(stmt)
-        return list(result.scalars().all())
 
 
 # ---------------------------------------------------------------------------

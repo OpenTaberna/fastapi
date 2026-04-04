@@ -13,37 +13,30 @@ FastAPI router for admin order management endpoints (Phase 2):
 
 Route order matters: pick-list is declared BEFORE {id} so FastAPI does not
 attempt to parse the literal string "pick-list" as a UUID path parameter.
-
-Authentication note:
-    TODO (Phase 2): Replace the dev-only `X-Admin-Key` header shim with a
-    real Keycloak `role=admin` dependency once admin auth is wired up.
 """
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, status
+from fastapi import APIRouter, Depends, status
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.customers.services.customers_db_service import (
-    get_address_repository,
-    get_customer_repository,
-)
 from app.services.orders.models.orders_models import OrderStatus
-from app.services.payments.services.payments_db_service import get_payment_repository
 from app.services.orders.services.orders_db_service import get_order_item_repository
-from app.services.shipments.services.shipments_db_service import get_shipment_repository
 from app.shared.config import get_settings
 from app.shared.config.settings import Settings
 from app.shared.database.session import get_session_dependency
 from app.shared.exceptions import entity_not_found
 from app.shared.logger import get_logger
 
+from ..dependencies import require_admin
 from ..functions import (
+    OrderContext,
     build_pick_list,
     create_shipment,
     db_to_admin_order_detail_response,
     db_to_order_response,
+    fetch_order_context,
     mark_order_shipped,
     render_packing_slip,
     render_pick_list_html,
@@ -71,40 +64,9 @@ logger = get_logger(__name__)
 
 router = APIRouter()
 
-
-# ---------------------------------------------------------------------------
-# Dev-only admin identity shim
-# ---------------------------------------------------------------------------
-# TODO (Phase 2): Replace with real Keycloak role=admin dependency.
-
-
-async def _require_admin(
-    x_admin_key: str | None = Header(
-        default=None,
-        alias="X-Admin-Key",
-        description="[Dev-only] Admin access token. Replaced by Keycloak role check in production.",
-    ),
-) -> None:
-    """
-    Enforce admin access on every admin endpoint.
-
-    Development shim: accepts any non-empty X-Admin-Key header value.
-    Production: validates a Keycloak JWT with role=admin claim.
-
-    Args:
-        x_admin_key: Value of the X-Admin-Key request header.
-
-    Raises:
-        AuthorizationError (403): When the header is absent (dev environment).
-    """
-    if x_admin_key is None:
-        from app.shared.exceptions import access_denied
-
-        raise access_denied(
-            resource="admin",
-            action="access",
-            message="Admin access required. Provide X-Admin-Key header (dev) or valid admin JWT (production).",
-        )
+# Maximum number of PAID orders included in a single pick-list render.
+# Adjust upward if the warehouse processes batches larger than this.
+_PICK_LIST_MAX_ORDERS = 10_000
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +82,7 @@ async def _require_admin(
         "Return a paginated list of all orders across all customers. "
         "Optionally filter by `status`. Soft-deleted orders are excluded."
     ),
-    dependencies=[Depends(_require_admin)],
+    dependencies=[Depends(require_admin)],
     responses=LIST_ORDERS_RESPONSES,
 )
 async def list_orders(
@@ -178,7 +140,7 @@ async def list_orders(
         "across every **PAID** order. Use this for batch warehouse picking "
         "before creating individual shipments."
     ),
-    dependencies=[Depends(_require_admin)],
+    dependencies=[Depends(require_admin)],
     responses=PICK_LIST_RESPONSES,
 )
 async def get_pick_list(
@@ -197,10 +159,13 @@ async def get_pick_list(
         HTMLResponse containing a printable pick list page.
     """
     repo = get_admin_order_repository(session)
+    item_repo = get_order_item_repository(session)
 
-    paid_orders = await repo.list_orders(status=OrderStatus.PAID, skip=0, limit=1000)
+    paid_orders = await repo.list_orders(
+        status=OrderStatus.PAID, skip=0, limit=_PICK_LIST_MAX_ORDERS
+    )
     order_ids = [o.id for o in paid_orders]
-    all_items = await repo.get_items_for_orders(order_ids)
+    all_items = await item_repo.get_by_order_ids(order_ids)
 
     pick_list: PickListResponse = build_pick_list(paid_orders, all_items)
     html = render_pick_list_html(pick_list)
@@ -225,7 +190,7 @@ async def get_pick_list(
         "Return the full order detail including customer, default shipping "
         "address, payment, and shipment records."
     ),
-    dependencies=[Depends(_require_admin)],
+    dependencies=[Depends(require_admin)],
     responses=GET_ORDER_DETAIL_RESPONSES,
 )
 async def get_order_detail(
@@ -234,10 +199,6 @@ async def get_order_detail(
 ) -> AdminOrderDetailResponse:
     """
     Fetch a single order with all its related entities for admin display.
-
-    Performs five individual queries (order, items, customer, address,
-    payment, shipment). None of the related lookups raise 404 — missing
-    related entities are returned as None in the response.
 
     Args:
         order_id: UUID of the order to retrieve.
@@ -249,32 +210,18 @@ async def get_order_detail(
     Raises:
         NotFoundError (404): If the order does not exist or is soft-deleted.
     """
-    order_repo = get_admin_order_repository(session)
-    item_repo = get_order_item_repository(session)
-    customer_repo = get_customer_repository(session)
-    address_repo = get_address_repository(session)
-    payment_repo = get_payment_repository(session)
-    shipment_repo = get_shipment_repository(session)
-
-    order = await order_repo.get(order_id)
-    if not order or order.deleted_at is not None:
+    ctx: OrderContext = await fetch_order_context(order_id, session)
+    if not ctx.order or ctx.order.deleted_at is not None:
         raise entity_not_found("Order", order_id)
-
-    items = list(await item_repo.filter(order_id=order.id))
-    customer = await customer_repo.get(order.customer_id)
-
-    shipping_address = None
-    if customer:
-        shipping_address = await address_repo.get_by(
-            customer_id=customer.id, is_default=True
-        )
-
-    payment = await payment_repo.get_by(order_id=order.id)
-    shipment = await shipment_repo.get_by(order_id=order.id)
 
     logger.debug("Admin order detail fetched", extra={"order_id": str(order_id)})
     return db_to_admin_order_detail_response(
-        order, items, customer, shipping_address, payment, shipment
+        ctx.order,
+        ctx.items,
+        ctx.customer,
+        ctx.shipping_address,
+        ctx.payment,
+        ctx.shipment,
     )
 
 
@@ -292,7 +239,7 @@ async def get_order_detail(
         "A `reason` field is required and is written to the structured "
         "application log as an audit trail entry."
     ),
-    dependencies=[Depends(_require_admin)],
+    dependencies=[Depends(require_admin)],
     responses=STATUS_OVERRIDE_RESPONSES,
 )
 async def override_order_status(
@@ -318,19 +265,13 @@ async def override_order_status(
     Raises:
         NotFoundError (404): If the order does not exist or is soft-deleted.
     """
-    order_repo = get_admin_order_repository(session)
-    item_repo = get_order_item_repository(session)
-    customer_repo = get_customer_repository(session)
-    address_repo = get_address_repository(session)
-    payment_repo = get_payment_repository(session)
-    shipment_repo = get_shipment_repository(session)
-
-    order = await order_repo.get(order_id)
-    if not order or order.deleted_at is not None:
+    ctx: OrderContext = await fetch_order_context(order_id, session)
+    if not ctx.order or ctx.order.deleted_at is not None:
         raise entity_not_found("Order", order_id)
 
-    previous_status = order.status
+    previous_status = ctx.order.status
 
+    order_repo = get_admin_order_repository(session)
     updated_order = await order_repo.update(order_id, status=payload.status.value)
 
     logger.info(
@@ -342,21 +283,13 @@ async def override_order_status(
             "reason": payload.reason,
         },
     )
-
-    items = list(await item_repo.filter(order_id=order_id))
-    customer = await customer_repo.get(updated_order.customer_id)
-
-    shipping_address = None
-    if customer:
-        shipping_address = await address_repo.get_by(
-            customer_id=customer.id, is_default=True
-        )
-
-    payment = await payment_repo.get_by(order_id=order_id)
-    shipment = await shipment_repo.get_by(order_id=order_id)
-
     return db_to_admin_order_detail_response(
-        updated_order, items, customer, shipping_address, payment, shipment
+        updated_order,
+        ctx.items,
+        ctx.customer,
+        ctx.shipping_address,
+        ctx.payment,
+        ctx.shipment,
     )
 
 
@@ -373,7 +306,7 @@ async def override_order_status(
         "Return a printable HTML packing slip for a single order. "
         "Open in browser and use Ctrl+P / Cmd+P to print."
     ),
-    dependencies=[Depends(_require_admin)],
+    dependencies=[Depends(require_admin)],
     responses=PACKING_SLIP_RESPONSES,
 )
 async def get_packing_slip(
@@ -382,9 +315,6 @@ async def get_packing_slip(
 ) -> HTMLResponse:
     """
     Render an HTML packing slip for a specific order.
-
-    Fetches the order, its items, the customer, their default address, and
-    the shipment record (if any), then renders a self-contained HTML page.
 
     Args:
         order_id: UUID of the order to render the slip for.
@@ -396,28 +326,13 @@ async def get_packing_slip(
     Raises:
         NotFoundError (404): If the order does not exist or is soft-deleted.
     """
-    order_repo = get_admin_order_repository(session)
-    item_repo = get_order_item_repository(session)
-    customer_repo = get_customer_repository(session)
-    address_repo = get_address_repository(session)
-    shipment_repo = get_shipment_repository(session)
-
-    order = await order_repo.get(order_id)
-    if not order or order.deleted_at is not None:
+    ctx: OrderContext = await fetch_order_context(order_id, session)
+    if not ctx.order or ctx.order.deleted_at is not None:
         raise entity_not_found("Order", order_id)
 
-    items = list(await item_repo.filter(order_id=order.id))
-    customer = await customer_repo.get(order.customer_id)
-
-    shipping_address = None
-    if customer:
-        shipping_address = await address_repo.get_by(
-            customer_id=customer.id, is_default=True
-        )
-
-    shipment = await shipment_repo.get_by(order_id=order.id)
-
-    html = render_packing_slip(order, items, customer, shipping_address, shipment)
+    html = render_packing_slip(
+        ctx.order, ctx.items, ctx.customer, ctx.shipping_address, ctx.shipment
+    )
     logger.debug("Packing slip rendered", extra={"order_id": str(order_id)})
     return HTMLResponse(content=html)
 
@@ -437,7 +352,7 @@ async def get_packing_slip(
         "**READY_TO_SHIP**. Provide `tracking_number` for manual carriers. "
         "For DHL, leave it empty — the label job (Phase 3) will fill it in."
     ),
-    dependencies=[Depends(_require_admin)],
+    dependencies=[Depends(require_admin)],
     responses=CREATE_SHIPMENT_RESPONSES,
 )
 async def create_order_shipment(
@@ -460,35 +375,26 @@ async def create_order_shipment(
         NotFoundError (404):     If the order does not exist or is soft-deleted.
         BusinessRuleError (400): If the order is not PAID, or already has a shipment.
     """
-    updated_order, shipment = await create_shipment(
+    updated_order, _ = await create_shipment(
         order_id=order_id,
         carrier=payload.carrier,
         tracking_number=payload.tracking_number,
         session=session,
     )
 
-    item_repo = get_order_item_repository(session)
-    customer_repo = get_customer_repository(session)
-    address_repo = get_address_repository(session)
-    payment_repo = get_payment_repository(session)
-
-    items = list(await item_repo.filter(order_id=order_id))
-    customer = await customer_repo.get(updated_order.customer_id)
-
-    shipping_address = None
-    if customer:
-        shipping_address = await address_repo.get_by(
-            customer_id=customer.id, is_default=True
-        )
-
-    payment = await payment_repo.get_by(order_id=order_id)
+    ctx: OrderContext = await fetch_order_context(order_id, session)
 
     logger.info(
         "Shipment created via admin",
         extra={"order_id": str(order_id)},
     )
     return db_to_admin_order_detail_response(
-        updated_order, items, customer, shipping_address, payment, shipment
+        updated_order,
+        ctx.items,
+        ctx.customer,
+        ctx.shipping_address,
+        ctx.payment,
+        ctx.shipment,
     )
 
 
@@ -506,7 +412,7 @@ async def create_order_shipment(
         "tracking notification e-mail to the customer. "
         "Requires a shipment record with a tracking number to be present."
     ),
-    dependencies=[Depends(_require_admin)],
+    dependencies=[Depends(require_admin)],
     responses=SHIP_ORDER_RESPONSES,
 )
 async def ship_order(
@@ -519,7 +425,7 @@ async def ship_order(
 
     Steps:
     1. Advance the order status to SHIPPED via mark_order_shipped.
-    2. Fetch the shipment record (must exist, should have tracking_number).
+    2. Load the full order context (customer, shipment, etc.).
     3. Send the tracking email (SMTP failure is logged, not re-raised).
     4. Build and return the full AdminOrderDetailResponse.
 
@@ -536,32 +442,15 @@ async def ship_order(
         BusinessRuleError (400): If the order is not in READY_TO_SHIP status.
     """
     updated_order = await mark_order_shipped(order_id=order_id, session=session)
+    ctx: OrderContext = await fetch_order_context(order_id, session)
 
-    item_repo = get_order_item_repository(session)
-    customer_repo = get_customer_repository(session)
-    address_repo = get_address_repository(session)
-    payment_repo = get_payment_repository(session)
-    shipment_repo = get_shipment_repository(session)
-
-    items = list(await item_repo.filter(order_id=order_id))
-    customer = await customer_repo.get(updated_order.customer_id)
-
-    shipping_address = None
-    if customer:
-        shipping_address = await address_repo.get_by(
-            customer_id=customer.id, is_default=True
-        )
-
-    payment = await payment_repo.get_by(order_id=order_id)
-    shipment = await shipment_repo.get_by(order_id=order_id)
-
-    if customer:
+    if ctx.customer:
         await send_tracking_email(
-            to_email=customer.email,
-            customer_name=f"{customer.first_name} {customer.last_name}",
+            to_email=ctx.customer.email,
+            customer_name=f"{ctx.customer.first_name} {ctx.customer.last_name}",
             order_id=order_id,
-            tracking_number=shipment.tracking_number if shipment else None,
-            carrier=shipment.carrier if shipment else "manual",
+            tracking_number=ctx.shipment.tracking_number if ctx.shipment else None,
+            carrier=ctx.shipment.carrier if ctx.shipment else "manual",
             settings=settings,
         )
 
@@ -569,9 +458,14 @@ async def ship_order(
         "Order shipped via admin",
         extra={
             "order_id": str(order_id),
-            "has_tracking": bool(shipment and shipment.tracking_number),
+            "has_tracking": bool(ctx.shipment and ctx.shipment.tracking_number),
         },
     )
     return db_to_admin_order_detail_response(
-        updated_order, items, customer, shipping_address, payment, shipment
+        updated_order,
+        ctx.items,
+        ctx.customer,
+        ctx.shipping_address,
+        ctx.payment,
+        ctx.shipment,
     )
