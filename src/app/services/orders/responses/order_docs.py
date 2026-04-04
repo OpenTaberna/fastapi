@@ -143,7 +143,10 @@ WEBHOOK_MISSING_SIG_EXAMPLE = _err(
     code="operation_not_allowed",
     category="business_rule",
     message="Operation not allowed: stripe_webhook - Missing Stripe-Signature header",
-    details={"operation": "stripe_webhook", "reason": "Missing Stripe-Signature header"},
+    details={
+        "operation": "stripe_webhook",
+        "reason": "Missing Stripe-Signature header",
+    },
 )
 
 WEBHOOK_INVALID_SIG_EXAMPLE = _err(

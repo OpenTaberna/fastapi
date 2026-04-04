@@ -159,6 +159,21 @@ class Settings(BaseSettings):
         description="ISO 3166-1 alpha-2 country for EU bank transfer virtual IBAN",
     )
 
+    # SMTP / Transactional email
+    smtp_host: str = Field(
+        default="",
+        description="SMTP server hostname (leave empty to disable email sending)",
+    )
+    smtp_port: int = Field(
+        default=587, description="SMTP server port (587=STARTTLS, 465=SSL)"
+    )
+    smtp_user: str = Field(default="", description="SMTP authentication username")
+    smtp_password: str = Field(default="", description="SMTP authentication password")
+    email_from: str = Field(
+        default="noreply@opentaberna.local",
+        description="Envelope sender address for outgoing emails",
+    )
+
     # Feature Flags
     feature_webhooks_enabled: bool = Field(default=False, description="Enable webhooks")
 

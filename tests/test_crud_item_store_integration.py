@@ -11,6 +11,7 @@ import requests
 
 # API base URL — override with TEST_API_URL env var if needed
 import os
+
 API_BASE_URL = os.getenv("TEST_API_URL", "http://localhost:8000") + "/v1/items"
 
 

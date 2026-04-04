@@ -22,7 +22,6 @@ from app.services.orders.models import (
     OrderCreate,
     OrderDetailResponse,
     OrderItemCreate,
-    OrderItemResponse,
     OrderStatus,
 )
 from app.services.orders.functions.order_validation import (
