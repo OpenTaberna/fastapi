@@ -7,6 +7,8 @@ volumes:
       device: ./opentaberna-postgres
   redis_data:
     driver: local
+  minio_data:
+    driver: local
 
 services:
   opentaberna-api:
@@ -24,6 +26,7 @@ services:
       - opentaberna-db
       - opentaberna-redis
       - opentaberna-keycloak
+      - opentaberna-minio
 
   opentaberna-db:
     image: postgres:17-alpine
@@ -61,3 +64,31 @@ services:
       - "8080:8080"
     restart: unless-stopped
     container_name: opentaberna-keycloak
+
+  opentaberna-minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-opentaberna}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-opentaberna_secret}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # MinIO Web Console
+    restart: unless-stopped
+    container_name: opentaberna-minio
+
+  opentaberna-worker:
+    build:
+      context: .
+      dockerfile: src/Dockerfile
+    image: opentaberna-api:latest
+    command: arq app.worker.WorkerSettings
+    env_file: .env
+    restart: unless-stopped
+    container_name: opentaberna-worker
+    depends_on:
+      - opentaberna-db
+      - opentaberna-redis
+      - opentaberna-minio
