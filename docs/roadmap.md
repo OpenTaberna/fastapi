@@ -179,7 +179,7 @@ Kein Feature-Endpunkt ohne diese Grundlage. Beide können parallel arbeiten.
 | **3.3** `DhlAdapter` — DHL Parcel DE REST API, Label PDF/ZPL, Storage (S3/MinIO) | **3.5** Outbox-Pattern — Outbox-Tabelle, Poller, zuverlässiges Job-Enqueuing in gleicher DB-Transaktion |
 | **3.4** Admin-Label-Endpunkte `POST/GET /admin/orders/{id}/label` | |
 
-**Fortschritt:** `[ ] 3.1` `[ ] 3.2` `[ ] 3.3` `[ ] 3.4` `[ ] 3.5`
+**Fortschritt:** `[x] 3.1` `[x] 3.2` `[x] 3.3` `[x] 3.4` `[x] 3.5`
 
 ---
 
