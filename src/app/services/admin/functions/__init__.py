@@ -8,6 +8,7 @@ from .admin_transformations import (
     db_to_admin_order_detail_response,
     db_to_order_response,
 )
+from .order_context import OrderContext, fetch_order_context
 from .packing_documents import (
     build_pick_list,
     render_packing_slip,
@@ -20,6 +21,9 @@ __all__ = [
     # Transformations
     "db_to_order_response",
     "db_to_admin_order_detail_response",
+    # Order context loader
+    "OrderContext",
+    "fetch_order_context",
     # Packing documents
     "render_packing_slip",
     "build_pick_list",
