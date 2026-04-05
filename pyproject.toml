@@ -10,7 +10,7 @@ name = "fastapi-opentaberna"
 version = "0.1.0"
 description = "FastAPI by the OpenTaberna Project"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
     "aiobotocore[boto3]>=3.3.0",
     "alembic>=1.18.4",

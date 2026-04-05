@@ -106,7 +106,7 @@ services:
       context: .
       dockerfile: src/Dockerfile
     image: opentaberna-api:latest
-    command: arq app.worker.WorkerSettings
+    command: python -m app.worker_main app.worker.WorkerSettings
     env_file: .env
     environment:
       REDIS_URL: redis://opentaberna-redis:6379/0

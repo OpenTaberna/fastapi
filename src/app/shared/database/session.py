@@ -70,7 +70,7 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         yield session
         await session.commit()
         logger.debug("Database session committed")
-    except (RequestValidationError, HTTPException):
+    except RequestValidationError, HTTPException:
         # FastAPI validation and HTTP errors should pass through unchanged
         await session.rollback()
         logger.debug("Database session rolled back due to FastAPI exception")
