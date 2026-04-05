@@ -31,7 +31,7 @@ import os
 import pytest
 import requests
 
-_BASE = os.getenv("TEST_API_URL", "http://localhost:8001")
+_BASE = os.getenv("TEST_API_URL", "http://localhost:8000")
 ORDERS_URL = f"{_BASE}/v1/orders"
 ITEMS_URL = f"{_BASE}/v1/items"
 

@@ -57,9 +57,7 @@ async def resolve_order_lines(
     resolved_lines: list[tuple[OrderItemCreate, int]] = []
     for line in items:
         price_data = items_by_sku[line.sku].price
-        unit_price = (
-            price_data.get("amount") if isinstance(price_data, dict) else None
-        )
+        unit_price = price_data.get("amount") if isinstance(price_data, dict) else None
         if unit_price is None:
             raise operation_not_allowed(
                 operation="create_order",

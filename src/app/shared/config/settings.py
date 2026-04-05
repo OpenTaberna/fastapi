@@ -159,6 +159,21 @@ class Settings(BaseSettings):
         description="ISO 3166-1 alpha-2 country for EU bank transfer virtual IBAN",
     )
 
+    # SMTP / Transactional email
+    smtp_host: str = Field(
+        default="",
+        description="SMTP server hostname (leave empty to disable email sending)",
+    )
+    smtp_port: int = Field(
+        default=587, description="SMTP server port (587=STARTTLS, 465=SSL)"
+    )
+    smtp_user: str = Field(default="", description="SMTP authentication username")
+    smtp_password: str = Field(default="", description="SMTP authentication password")
+    email_from: str = Field(
+        default="noreply@opentaberna.local",
+        description="Envelope sender address for outgoing emails",
+    )
+
     # Feature Flags
     feature_webhooks_enabled: bool = Field(default=False, description="Enable webhooks")
 
@@ -166,6 +181,68 @@ class Settings(BaseSettings):
     reservation_ttl_minutes: int = Field(
         default=15,
         description="How long (in minutes) a stock reservation is held before it expires",
+    )
+
+    # MinIO / S3 object storage
+    storage_endpoint_url: str = Field(
+        default="http://localhost:9000",
+        description="S3-compatible storage endpoint URL (MinIO or AWS S3)",
+    )
+    storage_access_key: str = Field(
+        default="opentaberna",
+        description="Storage access key ID (MinIO root user or AWS access key)",
+    )
+    storage_secret_key: str = Field(
+        default="opentaberna_secret",
+        description="Storage secret access key (MinIO root password or AWS secret key)",
+    )
+    storage_bucket_labels: str = Field(
+        default="shipping-labels",
+        description="Bucket name where carrier label files (PDF/ZPL) are stored",
+    )
+    storage_region: str = Field(
+        default="us-east-1",
+        description="Storage region (MinIO ignores this; required by boto3 client)",
+    )
+
+    # DHL Parcel DE REST API
+    dhl_api_base_url: str = Field(
+        default="https://api-sandbox.dhl.com/parcel/de/shipping/v2",
+        description="DHL Parcel DE REST API base URL (sandbox or production)",
+    )
+    dhl_client_id: str = Field(
+        default="CHANGE_ME",
+        description="DHL API OAuth2 client ID",
+    )
+    dhl_client_secret: str = Field(
+        default="CHANGE_ME",
+        description="DHL API OAuth2 client secret",
+    )
+    dhl_billing_number: str = Field(
+        default="CHANGE_ME",
+        description="DHL EKP billing number (Kundennummer) for label creation",
+    )
+    dhl_default_label_format: str = Field(
+        default="pdf",
+        description="Default label format requested from DHL: 'pdf' or 'zpl'",
+    )
+
+    # ARQ worker / job queue
+    arq_max_jobs: int = Field(
+        default=10,
+        description="Maximum number of jobs the ARQ worker runs concurrently",
+    )
+    arq_job_timeout: int = Field(
+        default=300,
+        description="Maximum wall-clock seconds a single job may run before it is killed",
+    )
+    arq_max_tries: int = Field(
+        default=5,
+        description="Maximum delivery attempts per job before it is dead-lettered",
+    )
+    outbox_poll_interval: int = Field(
+        default=30,
+        description="Seconds between outbox table sweeps for un-enqueued events",
     )
 
     @field_validator("secret_key")

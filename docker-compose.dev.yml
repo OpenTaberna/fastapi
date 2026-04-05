@@ -1,13 +1,3 @@
-volumes:
-  postgres_data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ./opentaberna-postgres
-  redis_data:
-    driver: local
-
 services:
   opentaberna-api:
     build:
@@ -16,14 +6,25 @@ services:
     image: opentaberna-api:latest
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     env_file: .env
+    environment:
+      REDIS_URL: redis://opentaberna-redis:6379/0
+      KEYCLOAK_URL: http://opentaberna-keycloak:8080
+      STORAGE_ENDPOINT_URL: http://opentaberna-minio:9000
     ports:
       - "8000:8000"
     restart: unless-stopped
     container_name: opentaberna-api
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/docs', timeout=5)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
     depends_on:
       - opentaberna-db
       - opentaberna-redis
       - opentaberna-keycloak
+      - opentaberna-minio
 
   opentaberna-db:
     image: postgres:17-alpine
@@ -35,6 +36,12 @@ services:
       - ./postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
     container_name: opentaberna-db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-opentaberna} -d ${POSTGRES_DB:-opentaberna}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
     ports:
       - "5432:5432"
 
@@ -45,6 +52,12 @@ services:
       - ./redis_data:/data
     restart: unless-stopped
     container_name: opentaberna-redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
     ports:
       - "6379:6379"
 
@@ -61,3 +74,55 @@ services:
       - "8080:8080"
     restart: unless-stopped
     container_name: opentaberna-keycloak
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+
+  opentaberna-minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-opentaberna}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-opentaberna_secret}
+    volumes:
+      - ./minio_data:/data
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # MinIO Web Console
+    restart: unless-stopped
+    container_name: opentaberna-minio
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9000/minio/health/live || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  opentaberna-worker:
+    build:
+      context: .
+      dockerfile: src/Dockerfile
+    image: opentaberna-api:latest
+    command: arq app.worker.WorkerSettings
+    env_file: .env
+    environment:
+      REDIS_URL: redis://opentaberna-redis:6379/0
+      STORAGE_ENDPOINT_URL: http://opentaberna-minio:9000
+    restart: unless-stopped
+    container_name: opentaberna-worker
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import os,redis; redis.Redis(host=os.getenv('REDIS_HOST', 'opentaberna-redis'), port=int(os.getenv('REDIS_PORT', 6379))).ping()\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      opentaberna-db:
+        condition: service_healthy
+      opentaberna-redis:
+        condition: service_healthy
+      opentaberna-minio:
+        condition: service_healthy
