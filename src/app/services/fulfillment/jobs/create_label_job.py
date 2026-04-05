@@ -210,7 +210,10 @@ def _extract_carrier_args(ctx: OrderContext, shipment_id: UUID) -> dict:
                 "Cannot create label: customer has no default shipping address. "
                 "Set a default address via PATCH /customers/me/addresses/{id}."
             ),
-            context={"shipment_id": str(shipment_id), "customer_id": str(ctx.customer.id)},
+            context={
+                "shipment_id": str(shipment_id),
+                "customer_id": str(ctx.customer.id),
+            },
         )
 
     recipient_name = f"{ctx.customer.first_name} {ctx.customer.last_name}"

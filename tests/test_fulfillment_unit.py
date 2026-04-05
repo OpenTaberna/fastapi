@@ -1014,8 +1014,8 @@ class TestExtractCarrierArgs:
         address = _make_address()
         address.street = "Unter den Linden 1"
         address.city = "Berlin"
-        address.zip_code = "10117"    # AddressDB column name
-        address.country = "DE"        # AddressDB column name
+        address.zip_code = "10117"  # AddressDB column name
+        address.country = "DE"  # AddressDB column name
         shipment = _make_shipment(carrier="dhl")
         ctx = _make_order_context(
             customer=customer, shipping_address=address, shipment=shipment
@@ -1027,8 +1027,12 @@ class TestExtractCarrierArgs:
         assert args["recipient_name"] == "Ada Lovelace"
         assert args["street"] == "Unter den Linden 1"
         assert args["city"] == "Berlin"
-        assert args["postal_code"] == "10117"   # dict key stays postal_code (carrier param)
-        assert args["country_code"] == "DE"      # dict key stays country_code (carrier param)
+        assert (
+            args["postal_code"] == "10117"
+        )  # dict key stays postal_code (carrier param)
+        assert (
+            args["country_code"] == "DE"
+        )  # dict key stays country_code (carrier param)
 
     def test_recipient_name_is_first_space_last(self):
         customer = _make_customer("Hans", "Müller")

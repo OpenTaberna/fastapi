@@ -84,7 +84,14 @@ def fulfillment_customer():
         f"'{unique}@fulfil-test.example', 'Fulfil', 'Tester');"
     )
     yield customer_id
-    # shipments.order_id FK is RESTRICT — delete shipments first, then customer
+    # Delete outbox events first — prevents the ARQ worker from picking up stale
+    # events after fixture teardown removes the customer/order data, which would
+    # produce misleading "no associated customer" errors in the worker log.
+    _psql(
+        f"DELETE FROM outbox_events WHERE payload::jsonb->>'order_id' IN "
+        f"(SELECT id::text FROM orders WHERE customer_id = '{customer_id}');"
+    )
+    # shipments.order_id FK is RESTRICT — delete shipments before orders/customer
     _psql(
         f"DELETE FROM shipments WHERE order_id IN "
         f"(SELECT id FROM orders WHERE customer_id = '{customer_id}');"
