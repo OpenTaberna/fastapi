@@ -50,7 +50,7 @@ class OutboxRepository(BaseRepository[OutboxEventDB]):
         Returns:
             List of OutboxEventDB rows with status=PENDING, oldest first.
         """
-        result = await self._session.execute(
+        result = await self.session.execute(
             select(OutboxEventDB)
             .where(OutboxEventDB.status == OutboxStatus.PENDING.value)
             .order_by(OutboxEventDB.created_at.asc())

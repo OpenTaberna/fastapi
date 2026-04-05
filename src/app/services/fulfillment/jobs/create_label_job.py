@@ -59,7 +59,12 @@ _LABEL_MIME: dict[str, str] = {
 }
 
 
-async def create_label(ctx: dict, *, outbox_event_id: str) -> None:
+async def create_label(
+    ctx: dict,
+    *,
+    outbox_event_id: str,
+    **_: object,
+) -> None:
     """
     ARQ task: generate a carrier label and store it in MinIO.
 
@@ -70,6 +75,8 @@ async def create_label(ctx: dict, *, outbox_event_id: str) -> None:
         ctx:             ARQ worker context dict (populated by startup hook).
         outbox_event_id: String UUID of the OutboxEventDB row that triggered
                          this job — used to load the payload and mark DONE/DEAD.
+        **_: Additional legacy kwargs are accepted and ignored for
+             compatibility with already-enqueued jobs.
 
     Returns:
         None

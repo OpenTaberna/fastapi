@@ -29,7 +29,6 @@ Retry / Backoff:
     is exponential (2^attempt seconds) and is handled entirely by ARQ.
 """
 
-import json
 from uuid import UUID
 
 from arq import cron
@@ -168,11 +167,9 @@ async def _enqueue_single_outbox_event(ctx: dict, event) -> None:
     redis = ctx["redis"]
 
     try:
-        payload = json.loads(event.payload)
         job = await redis.enqueue_job(
             event.event_type,
             outbox_event_id=str(event.id),
-            **{k: v for k, v in payload.items() if k != "outbox_event_id"},
         )
         arq_job_id = job.job_id if job else str(event.id)
 
