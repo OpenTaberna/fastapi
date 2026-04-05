@@ -89,14 +89,18 @@ def _make_customer(first_name: str = "Jane", last_name: str = "Doe") -> MagicMoc
 
 
 def _make_address() -> MagicMock:
-    """Return a mock that behaves like an AddressDB row."""
+    """Return a mock that behaves like an AddressDB row.
+
+    Field names match AddressDB exactly: zip_code (not postal_code),
+    country (not country_code).
+    """
     now = datetime.now(UTC)
     a = MagicMock()
     a.id = uuid4()
     a.street = "Musterstraße 1"
     a.city = "Berlin"
-    a.postal_code = "10115"
-    a.country_code = "DE"
+    a.zip_code = "10115"
+    a.country = "DE"
     a.is_default = True
     a.created_at = now
     a.updated_at = now
@@ -1010,8 +1014,8 @@ class TestExtractCarrierArgs:
         address = _make_address()
         address.street = "Unter den Linden 1"
         address.city = "Berlin"
-        address.postal_code = "10117"
-        address.country_code = "DE"
+        address.zip_code = "10117"    # AddressDB column name
+        address.country = "DE"        # AddressDB column name
         shipment = _make_shipment(carrier="dhl")
         ctx = _make_order_context(
             customer=customer, shipping_address=address, shipment=shipment
@@ -1023,8 +1027,8 @@ class TestExtractCarrierArgs:
         assert args["recipient_name"] == "Ada Lovelace"
         assert args["street"] == "Unter den Linden 1"
         assert args["city"] == "Berlin"
-        assert args["postal_code"] == "10117"
-        assert args["country_code"] == "DE"
+        assert args["postal_code"] == "10117"   # dict key stays postal_code (carrier param)
+        assert args["country_code"] == "DE"      # dict key stays country_code (carrier param)
 
     def test_recipient_name_is_first_space_last(self):
         customer = _make_customer("Hans", "Müller")
