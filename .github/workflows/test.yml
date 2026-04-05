@@ -21,7 +21,7 @@ on:
           - ERROR
 
 env:
-  PYTHON_VERSION: '3.12'
+  PYTHON_VERSION: '3.14'
   UV_VERSION: '0.4.0'
   TEST_API_URL: 'http://localhost:8000'
 
