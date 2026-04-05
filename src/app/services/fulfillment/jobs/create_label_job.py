@@ -191,16 +191,26 @@ def _extract_carrier_args(ctx: OrderContext, shipment_id: UUID) -> dict:
         shipment_id: UUID used in error context if required data is missing.
 
     Returns:
-        Dict with carrier, recipient_name, street, city, postal_code,
-        country_code, and weight_kg ready to pass to CarrierAdapter.create_label.
+        Dict with carrier, recipient_name, street, city, postal_code (from
+        AddressDB.zip_code), country_code (from AddressDB.country), and
+        weight_kg ready to pass to CarrierAdapter.create_label.
 
     Raises:
         CarrierError: If the customer or shipping address is missing from the context.
     """
-    if ctx.customer is None or ctx.shipping_address is None:
+    if ctx.customer is None:
         raise CarrierError(
-            message="Cannot create label: order has no customer or shipping address.",
+            message="Cannot create label: order has no associated customer.",
             context={"shipment_id": str(shipment_id)},
+        )
+
+    if ctx.shipping_address is None:
+        raise CarrierError(
+            message=(
+                "Cannot create label: customer has no default shipping address. "
+                "Set a default address via PATCH /customers/me/addresses/{id}."
+            ),
+            context={"shipment_id": str(shipment_id), "customer_id": str(ctx.customer.id)},
         )
 
     recipient_name = f"{ctx.customer.first_name} {ctx.customer.last_name}"
@@ -210,8 +220,8 @@ def _extract_carrier_args(ctx: OrderContext, shipment_id: UUID) -> dict:
         "recipient_name": recipient_name,
         "street": ctx.shipping_address.street,
         "city": ctx.shipping_address.city,
-        "postal_code": ctx.shipping_address.postal_code,
-        "country_code": ctx.shipping_address.country_code,
+        "postal_code": ctx.shipping_address.zip_code,
+        "country_code": ctx.shipping_address.country,
         "weight_kg": 1.0,  # Default weight — extend with per-order weight in Phase 4
     }
 
