@@ -160,6 +160,7 @@ async def create_order(
         )
         order_items.append(oi)
 
+    await session.commit()
     return db_to_order_detail_response(order, order_items)
 
 
@@ -265,6 +266,7 @@ async def cancel_order(
         status=OrderStatus.CANCELLED.value,
         deleted_at=datetime.now(UTC),
     )
+    await session.commit()
     logger.info("Order cancelled", extra={"order_id": str(order_id)})
 
 
@@ -366,6 +368,7 @@ async def checkout_order(
         order_id,
         status=OrderStatus.PENDING_PAYMENT.value,
     )
+    await session.commit()
     logger.info(
         "Order advanced to PENDING_PAYMENT",
         extra={"order_id": str(order_id)},
