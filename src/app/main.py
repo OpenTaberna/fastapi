@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 
 from app.chore import lifespan
 from app.services.crud_item_store import router as item_store_router
+from app.services.customers import customers_api_router
 from app.services.orders import orders_api_router, webhooks_api_router
 from app.shared.exceptions import AppException, InternalError
 from app.shared.responses import ErrorResponse, ValidationErrorResponse
@@ -110,6 +111,9 @@ app.add_middleware(
 
 # Include crud-item-store router
 app.include_router(item_store_router, prefix="/v1")
+
+# Include customers service router
+app.include_router(customers_api_router, prefix="/v1")
 
 # Include orders service routers
 app.include_router(orders_api_router, prefix="/v1")
