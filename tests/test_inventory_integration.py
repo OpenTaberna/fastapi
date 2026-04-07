@@ -21,6 +21,7 @@ Auth note:
 """
 
 import os
+import subprocess
 import uuid
 
 import pytest
@@ -38,6 +39,18 @@ ADMIN_HEADERS = {"X-Admin-Key": "dev"}
 
 def _unique_sku(prefix: str = "INV-TEST") -> str:
     return f"{prefix}-{uuid.uuid4().hex[:8].upper()}"
+
+
+def _psql(sql: str) -> None:
+    """Execute a SQL statement inside the running Postgres container."""
+    subprocess.run(
+        [
+            "docker", "exec", "opentaberna-db",
+            "psql", "-U", "opentaberna", "-d", "opentaberna", "-c", sql,
+        ],
+        check=True,
+        capture_output=True,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -204,19 +217,21 @@ class TestListInventoryItems:
     """GET /v1/admin/inventory/"""
 
     def test_list_returns_200(self, inventory_item):
-        """Listing inventory items returns 200 with a list."""
+        """Listing inventory items returns 200 with a paginated response."""
         response = requests.get(INVENTORY_URL + "/", headers=ADMIN_HEADERS)
 
         assert response.status_code == 200
         data = response.json()
-        assert isinstance(data, list)
+        assert "items" in data
+        assert "page_info" in data
+        assert isinstance(data["items"], list)
 
     def test_list_contains_created_item(self, inventory_item):
         """The module-scoped fixture item must appear in the list."""
         response = requests.get(INVENTORY_URL + "/?limit=200", headers=ADMIN_HEADERS)
 
         assert response.status_code == 200
-        ids = [item["id"] for item in response.json()]
+        ids = [item["id"] for item in response.json()["items"]]
         assert inventory_item["id"] in ids
 
     def test_list_pagination_skip(self, inventory_item):
@@ -226,7 +241,7 @@ class TestListInventoryItems:
         )
 
         assert response.status_code == 200
-        assert len(response.json()) <= 5
+        assert len(response.json()["items"]) <= 5
 
     def test_list_limit_respected(self, inventory_item):
         """limit=1 returns at most 1 item."""
@@ -235,7 +250,7 @@ class TestListInventoryItems:
         )
 
         assert response.status_code == 200
-        assert len(response.json()) <= 1
+        assert len(response.json()["items"]) <= 1
 
     def test_list_invalid_skip_returns_422(self):
         """skip < 0 returns 422."""
@@ -397,15 +412,19 @@ class TestUpdateInventoryItem:
         assert update_resp.json()["on_hand"] == 0
 
     def test_update_on_hand_below_reserved_returns_400(self, create_item):
-        """Setting on_hand below the current reserved count returns 400."""
+        """Setting on_hand below the current reserved count returns 400.
+
+        reserved is managed exclusively by the checkout flow and cannot be set
+        via PATCH. This test seeds reserved directly via psql so the constraint
+        can be exercised without a full checkout.
+        """
         sku = _unique_sku("RES")
         item = create_item(sku, 20)
 
-        # Set reserved=10 via PATCH
-        requests.patch(
-            f"{INVENTORY_URL}/{item['id']}",
-            json={"reserved": 10},
-            headers=ADMIN_HEADERS,
+        # Seed reserved=10 directly in the DB — the API intentionally does not
+        # expose reserved as a writable field.
+        _psql(
+            f"UPDATE inventory_items SET reserved = 10 WHERE id = '{item['id']}'"
         )
 
         # Now try to set on_hand=5 (below reserved=10) — must fail
