@@ -99,6 +99,18 @@ CONSTRAINT_VIOLATION_EXAMPLE = _err(
     details={"field": "on_hand", "constraint": "on_hand >= reserved"},
 )
 
+ACTIVE_RESERVATIONS_EXAMPLE = _err(
+    status=400,
+    code="business_rule_violation",
+    category="business_rule",
+    message="Cannot delete inventory item with 19 active reservation(s). Release all reservations before deleting.",
+    details={
+        "inventory_id": "9f8e7d6c-5b4a-3210-fedc-ba9876543210",
+        "sku": "CHAIR-RED-001",
+        "reserved": 19,
+    },
+)
+
 DATABASE_ERROR_EXAMPLE = _err(
     status=500,
     code="database_query_error",
@@ -252,10 +264,33 @@ GET_INVENTORY_BY_SKU_RESPONSES = {
     500: _500_BLOCK,
 }
 
+_LIST_INVENTORY_EXAMPLE = {
+    "success": True,
+    "message": "Inventory items retrieved successfully",
+    "items": [
+        _INVENTORY_ITEM_EXAMPLE,
+        {
+            "id": "1a2b3c4d-5e6f-7890-abcd-ef1234567890",
+            "sku": "TABLE-OAK-001",
+            "on_hand": 19,
+            "reserved": 19,
+            "created_at": "2026-01-20T08:00:00Z",
+            "updated_at": "2026-04-07T00:22:39Z",
+        },
+    ],
+    "page_info": {
+        "page": 1,
+        "size": 50,
+        "total": 2,
+        "pages": 1,
+    },
+}
+
 LIST_INVENTORY_RESPONSES = {
     200: {
         "description": "Inventory items retrieved successfully",
         "model": list[InventoryItemResponse],
+        "content": {"application/json": {"example": _LIST_INVENTORY_EXAMPLE}},
     },
     403: _403_BLOCK,
     422: {
@@ -301,7 +336,11 @@ UPDATE_INVENTORY_RESPONSES = {
 }
 
 DELETE_INVENTORY_RESPONSES = {
-    204: {"description": "Inventory item deleted successfully"},
+    400: {
+        "description": "Item has active stock reservations",
+        "model": ErrorResponse,
+        "content": {"application/json": {"example": ACTIVE_RESERVATIONS_EXAMPLE}},
+    },
     403: _403_BLOCK,
     404: _404_BLOCK,
     422: _422_UUID_BLOCK,
