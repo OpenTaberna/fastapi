@@ -95,6 +95,37 @@ class InventoryRepository(BaseRepository[InventoryItemDB]):
             )
         return await self.update(inventory_id, **update_data)
 
+    async def delete_inventory_item(self, inventory_id: UUID) -> bool:
+        """
+        Delete an inventory record, guarding against active reservations.
+
+        Args:
+            inventory_id: UUID of the inventory record to delete.
+
+        Returns:
+            True if deleted, False if not found.
+
+        Raises:
+            BusinessRuleError (400): If the item has active stock reservations.
+        """
+        item = await self.get(inventory_id)
+        if item is None:
+            return False
+        if item.reserved > 0:
+            raise BusinessRuleError(
+                message=(
+                    f"Cannot delete inventory item with {item.reserved} active "
+                    f"reservation(s). Release all reservations before deleting."
+                ),
+                error_code=ErrorCode.BUSINESS_RULE_VIOLATION,
+                context={
+                    "inventory_id": str(inventory_id),
+                    "sku": item.sku,
+                    "reserved": item.reserved,
+                },
+            )
+        return await self.delete(inventory_id)
+
 
 class StockReservationRepository(BaseRepository[StockReservationDB]):
     """
