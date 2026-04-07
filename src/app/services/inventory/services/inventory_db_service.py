@@ -14,6 +14,9 @@ from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.shared.database.repository import BaseRepository
+from app.shared.exceptions import duplicate_entry
+from app.shared.exceptions.enums import ErrorCode
+from app.shared.exceptions.errors import BusinessRuleError
 from app.shared.logger import get_logger
 from ..models.inventory_db_models import InventoryItemDB, StockReservationDB
 
@@ -50,6 +53,47 @@ class InventoryRepository(BaseRepository[InventoryItemDB]):
         if available is None:
             return 0
         return max(0, available)
+
+    async def create_inventory_item(self, sku: str, on_hand: int) -> InventoryItemDB:
+        """
+        Create a new inventory record, guarding against duplicate SKUs.
+
+        Raises:
+            ValidationError (422): If a record for this SKU already exists.
+        """
+        existing = await self.get_by(sku=sku)
+        if existing:
+            raise duplicate_entry("InventoryItem", "sku", sku)
+        return await self.create(sku=sku, on_hand=on_hand, reserved=0)
+
+    async def update_stock(
+        self, inventory_id: UUID, update_data: dict
+    ) -> InventoryItemDB | None:
+        """
+        Update inventory stock, enforcing the on_hand >= reserved invariant.
+
+        Args:
+            inventory_id: UUID of the inventory record.
+            update_data:  Dict of fields to update (from InventoryItemUpdate).
+
+        Returns:
+            Updated InventoryItemDB, or None if not found.
+
+        Raises:
+            BusinessRuleError (400): If new on_hand would be less than current reserved.
+        """
+        item = await self.get(inventory_id)
+        if item is None:
+            return None
+        if "on_hand" in update_data and update_data["on_hand"] < item.reserved:
+            raise BusinessRuleError(
+                message=(
+                    f"on_hand cannot be less than current reserved quantity ({item.reserved})"
+                ),
+                error_code=ErrorCode.BUSINESS_RULE_VIOLATION,
+                context={"field": "on_hand", "constraint": "on_hand >= reserved"},
+            )
+        return await self.update(inventory_id, **update_data)
 
 
 class StockReservationRepository(BaseRepository[StockReservationDB]):
