@@ -22,16 +22,6 @@ from .routers import inventory_router
 
 inventory_api_router = APIRouter(
     prefix="/admin/inventory",
-    tags=["Inventory"],
-)
-inventory_api_router.include_router(inventory_router)
-
-__all__ = ["inventory_api_router"]
-
-from .routers import inventory_router
-
-inventory_api_router = APIRouter(
-    prefix="/admin/inventory",
     tags=["Admin", "Inventory"],
 )
 inventory_api_router.include_router(inventory_router)
