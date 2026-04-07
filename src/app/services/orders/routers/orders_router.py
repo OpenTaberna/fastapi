@@ -49,6 +49,7 @@ from ..services import (
     get_order_item_repository,
     get_order_repository,
 )
+from app.services.customers.services import get_customer_repository
 
 logger = get_logger(__name__)
 
@@ -122,10 +123,19 @@ async def create_order(
 
     Raises:
         NotFoundError (404):          If any requested SKU does not exist.
+        NotFoundError (404):          If the customer does not exist.
         RequestValidationError (422): If input data fails Pydantic validation.
         DatabaseError (500):          If a database operation fails.
     """
     order_repo = get_order_repository(session)
+
+    # ------------------------------------------------------------------
+    # 0. Verify customer exists
+    # ------------------------------------------------------------------
+    customer_repo = get_customer_repository(session)
+    customer = await customer_repo.get(customer_id)
+    if not customer:
+        raise entity_not_found("Customer", customer_id)
 
     # ------------------------------------------------------------------
     # 1 & 2. Resolve SKUs → price snapshot + calculate total_amount
