@@ -315,11 +315,12 @@ async def update_inventory_item(
 @router.delete(
     "/{inventory_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_description="Inventory item deleted successfully",
     summary="Delete inventory record (admin)",
     description=(
         "Permanently remove an inventory record. "
-        "Only safe when the SKU has no active stock reservations "
-        "(the DB will reject the delete otherwise)."
+        "The item must have **no active stock reservations** (`reserved = 0`). "
+        "Release or wait for all reservations to expire before deleting."
     ),
     dependencies=[Depends(require_admin)],
     responses=DELETE_INVENTORY_RESPONSES,
@@ -337,11 +338,12 @@ async def delete_inventory_item(
 
     Raises:
         NotFoundError (404):          If no record exists with that UUID.
+        BusinessRuleError (400):      If the item has active stock reservations.
         RequestValidationError (422): If the UUID format is invalid.
-        DatabaseError (500):          If a database operation fails (e.g. active reservations block deletion).
+        DatabaseError (500):          If a database operation fails.
     """
     repo = get_inventory_repository(session)
-    deleted = await repo.delete(inventory_id)
+    deleted = await repo.delete_inventory_item(inventory_id)
     if not deleted:
         raise entity_not_found("InventoryItem", inventory_id)
     await session.commit()
