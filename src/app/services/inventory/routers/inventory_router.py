@@ -23,15 +23,9 @@ from fastapi import APIRouter, Depends, Header, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.shared.database.session import get_session_dependency
-from app.shared.exceptions import (
-    access_denied,
-    constraint_violation,
-    duplicate_entry,
-    entity_not_found,
-)
-from app.shared.exceptions.errors import BusinessRuleError
-from app.shared.exceptions.enums import ErrorCode
+from app.shared.exceptions import access_denied, entity_not_found
 from app.shared.logger import get_logger
+from app.shared.responses import PaginatedResponse, PageInfo
 
 from ..models import InventoryItemCreate, InventoryItemResponse, InventoryItemUpdate
 from ..responses import (
@@ -117,16 +111,7 @@ async def create_inventory_item(
         DatabaseError (500):   If a database operation fails.
     """
     repo = get_inventory_repository(session)
-
-    existing = await repo.get_by(sku=payload.sku)
-    if existing:
-        raise duplicate_entry("InventoryItem", "sku", payload.sku)
-
-    item = await repo.create(
-        sku=payload.sku,
-        on_hand=payload.on_hand,
-        reserved=0,
-    )
+    item = await repo.create_inventory_item(sku=payload.sku, on_hand=payload.on_hand)
     await session.commit()
     logger.info(
         "Inventory item created",
@@ -182,7 +167,7 @@ async def get_inventory_by_sku(
 
 @router.get(
     "/",
-    response_model=list[InventoryItemResponse],
+    response_model=PaginatedResponse[InventoryItemResponse],
     summary="List inventory items (admin)",
     description=(
         "Return a paginated list of all inventory records. "
@@ -197,7 +182,7 @@ async def list_inventory_items(
         50, ge=1, le=200, description="Maximum number of records to return"
     ),
     session: AsyncSession = Depends(get_session_dependency),
-) -> list[InventoryItemResponse]:
+) -> PaginatedResponse[InventoryItemResponse]:
     """
     Return a paginated list of all inventory items.
 
@@ -207,18 +192,26 @@ async def list_inventory_items(
         session: Database session.
 
     Returns:
-        List of InventoryItemResponse objects.
+        PaginatedResponse[InventoryItemResponse] with page metadata.
 
     Raises:
         DatabaseError (500): If a database operation fails.
     """
     repo = get_inventory_repository(session)
     items = await repo.filter(skip=skip, limit=limit)
+    total = await repo.count()
+    total_pages = (total + limit - 1) // limit if total > 0 else 0
+    page = (skip // limit) + 1
     logger.debug(
         "Inventory items listed",
         extra={"skip": skip, "limit": limit, "count": len(items)},
     )
-    return [InventoryItemResponse.model_validate(item) for item in items]
+    return PaginatedResponse[InventoryItemResponse](
+        success=True,
+        items=[InventoryItemResponse.model_validate(item) for item in items],
+        page_info=PageInfo(page=page, size=limit, total=total, pages=total_pages),
+        message="Inventory items retrieved successfully",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -302,25 +295,10 @@ async def update_inventory_item(
         DatabaseError (500):          If a database operation fails.
     """
     repo = get_inventory_repository(session)
-    item = await repo.get(inventory_id)
+    update_data = payload.model_dump(exclude_unset=True)
+    item = await repo.update_stock(inventory_id, update_data)
     if not item:
         raise entity_not_found("InventoryItem", inventory_id)
-
-    update_data = payload.model_dump(exclude_unset=True)
-
-    if "on_hand" in update_data and update_data["on_hand"] < item.reserved:
-        raise BusinessRuleError(
-            message=(
-                f"on_hand cannot be less than current reserved quantity ({item.reserved})"
-            ),
-            error_code=ErrorCode.BUSINESS_RULE_VIOLATION,
-            context={"field": "on_hand", "constraint": "on_hand >= reserved"},
-        )
-
-    for key, value in update_data.items():
-        setattr(item, key, value)
-    await session.flush()
-    await session.refresh(item)
     await session.commit()
     logger.info(
         "Inventory item updated",
