@@ -84,11 +84,10 @@ class TestInventoryItemCreate:
         item = InventoryItemCreate(sku="CHAIR-RED-001", on_hand=100)
         assert item.sku == "CHAIR-RED-001"
         assert item.on_hand == 100
-        assert item.reserved == 0  # default
 
-    def test_valid_item_with_reserved(self):
-        item = InventoryItemCreate(sku="DESK-BLK-001", on_hand=50, reserved=5)
-        assert item.reserved == 5
+    def test_reserved_not_an_input_field(self):
+        item = InventoryItemCreate(sku="DESK-BLK-001", on_hand=50)
+        assert not hasattr(item, "reserved")
 
     def test_sku_empty_string_rejected(self):
         with pytest.raises(Exception):
@@ -110,14 +109,6 @@ class TestInventoryItemCreate:
         with pytest.raises(Exception):
             InventoryItemCreate(sku="CHAIR-RED-001", on_hand=-1)
 
-    def test_reserved_negative_rejected(self):
-        with pytest.raises(Exception):
-            InventoryItemCreate(sku="CHAIR-RED-001", on_hand=10, reserved=-1)
-
-    def test_reserved_defaults_to_zero(self):
-        item = InventoryItemCreate(sku="CHAIR-RED-001", on_hand=10)
-        assert item.reserved == 0
-
     def test_sku_is_required(self):
         with pytest.raises(Exception):
             InventoryItemCreate(on_hand=10)
@@ -138,22 +129,18 @@ class TestInventoryItemUpdate:
     def test_all_fields_optional(self):
         update = InventoryItemUpdate()
         assert update.on_hand is None
-        assert update.reserved is None
 
     def test_set_on_hand_only(self):
         update = InventoryItemUpdate(on_hand=200)
         assert update.on_hand == 200
-        assert update.reserved is None
 
-    def test_set_reserved_only(self):
-        update = InventoryItemUpdate(reserved=3)
-        assert update.reserved == 3
-        assert update.on_hand is None
+    def test_reserved_not_an_input_field(self):
+        update = InventoryItemUpdate()
+        assert not hasattr(update, "reserved")
 
     def test_set_both_fields(self):
-        update = InventoryItemUpdate(on_hand=50, reserved=5)
+        update = InventoryItemUpdate(on_hand=50)
         assert update.on_hand == 50
-        assert update.reserved == 5
 
     def test_on_hand_zero_accepted(self):
         update = InventoryItemUpdate(on_hand=0)
@@ -163,14 +150,6 @@ class TestInventoryItemUpdate:
         with pytest.raises(Exception):
             InventoryItemUpdate(on_hand=-1)
 
-    def test_reserved_zero_accepted(self):
-        update = InventoryItemUpdate(reserved=0)
-        assert update.reserved == 0
-
-    def test_reserved_negative_rejected(self):
-        with pytest.raises(Exception):
-            InventoryItemUpdate(reserved=-1)
-
     def test_model_dump_excludes_unset(self):
         """exclude_unset so partial PATCH only touches provided fields."""
         update = InventoryItemUpdate(on_hand=99)
@@ -179,9 +158,9 @@ class TestInventoryItemUpdate:
         assert "reserved" not in dumped
 
     def test_model_dump_both_set(self):
-        update = InventoryItemUpdate(on_hand=50, reserved=2)
+        update = InventoryItemUpdate(on_hand=50)
         dumped = update.model_dump(exclude_unset=True)
-        assert dumped == {"on_hand": 50, "reserved": 2}
+        assert dumped == {"on_hand": 50}
 
 
 # ---------------------------------------------------------------------------
