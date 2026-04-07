@@ -37,9 +37,6 @@ class InventoryItemBase(BaseModel):
         ..., min_length=1, max_length=100, description="SKU — matches items.sku"
     )
     on_hand: int = Field(..., ge=0, description="Physical stock count in the warehouse")
-    reserved: int = Field(
-        default=0, ge=0, description="Units locked by active reservations"
-    )
 
 
 class InventoryItemCreate(InventoryItemBase):
@@ -52,7 +49,6 @@ class InventoryItemUpdate(BaseModel):
     """Schema for partial inventory updates. All fields optional."""
 
     on_hand: int | None = Field(default=None, ge=0)
-    reserved: int | None = Field(default=None, ge=0)
 
 
 class InventoryItemResponse(InventoryItemBase):
@@ -61,6 +57,7 @@ class InventoryItemResponse(InventoryItemBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID = Field(..., description="Internal inventory item UUID")
+    reserved: int = Field(default=0, ge=0, description="Units locked by active reservations")
     created_at: datetime = Field(..., description="Record creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
 
