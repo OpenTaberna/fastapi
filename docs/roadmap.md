@@ -193,7 +193,7 @@ Kein Feature-Endpunkt ohne diese Grundlage. Beide können parallel arbeiten.
 | **4.4** Returns / RMA | `POST /orders/{id}/returns`, `PATCH /admin/returns/{id}` |
 | **4.5** Security Hardening | CORS einschränken, Rate-Limiting auf Webhook (`slowapi`), `CHANGE_ME`-Startup-Validation |
 
-**Fortschritt:** `[ ] 4.1` `[ ] 4.2` `[ ] 4.3` `[ ] 4.4` `[ ] 4.5`
+**Fortschritt:** `[x] 4.1` `[x] 4.2` `[x] 4.3` `[x] 4.4` `[x] 4.5`
 
 ---
 
