@@ -45,6 +45,9 @@ import app.db_models  # noqa: F401 — ensures all ORM models are registered
 from app.services.fulfillment.adapters.dhl_adapter import build_dhl_adapter
 from app.services.fulfillment.adapters.manual_adapter import ManualCarrierAdapter
 from app.services.fulfillment.jobs.create_label_job import create_label
+from app.services.fulfillment.jobs.expire_reservations_job import (
+    expire_reservations_sweep,
+)
 from app.services.fulfillment.outbox.services.outbox_db_service import (
     get_outbox_repository,
 )
@@ -402,7 +405,12 @@ class WorkerSettings:
 
     functions = [create_label]
 
-    cron_jobs = [_build_outbox_cron(poll_outbox)]
+    cron_jobs = [
+        # Outbox poller — cadence derived from settings.outbox_poll_interval
+        _build_outbox_cron(poll_outbox),
+        # Phase 4.2 — release expired stock reservations every 5 minutes
+        cron(expire_reservations_sweep, minute={*range(0, 60, 5)}, second=0),
+    ]
 
     on_startup = startup
     on_shutdown = shutdown
