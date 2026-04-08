@@ -13,7 +13,7 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.shared.database.repository import BaseRepository
-from app.shared.exceptions import access_denied, entity_not_found
+from app.shared.exceptions import access_denied, entity_not_found, missing_field
 from ..models.customers_db_models import AddressDB, CustomerDB
 from ..models.customers_models import AddressCreate, AddressUpdate, CustomerUpdate
 
@@ -28,15 +28,25 @@ class CustomerRepository(BaseRepository[CustomerDB]):
         """Look up a customer by their Keycloak subject claim."""
         return await self.get_by(keycloak_user_id=keycloak_user_id)
 
+    async def get_by_keycloak_id_or_404(self, keycloak_user_id: str) -> CustomerDB:
+        """Look up a customer by Keycloak ID, raising 404 if not found."""
+        customer = await self.get_by_keycloak_id(keycloak_user_id)
+        if customer is None:
+            raise entity_not_found("Customer", keycloak_user_id)
+        return customer
+
     async def get_or_create(
         self,
         keycloak_user_id: str,
-        email: str,
-        first_name: str,
-        last_name: str,
+        email: str | None,
+        first_name: str | None,
+        last_name: str | None,
     ) -> tuple[CustomerDB, bool]:
         """
         Return the customer matching *keycloak_user_id*, creating it if absent.
+
+        On first call (no existing profile), all creation fields are required.
+        Raises missing_field (422) if any creation field is absent.
 
         Returns:
             (customer, created) — created is True when a new record was inserted.
@@ -44,6 +54,13 @@ class CustomerRepository(BaseRepository[CustomerDB]):
         customer = await self.get_by_keycloak_id(keycloak_user_id)
         if customer is not None:
             return customer, False
+
+        if not email:
+            raise missing_field("X-Customer-Email")
+        if not first_name:
+            raise missing_field("X-Customer-First-Name")
+        if not last_name:
+            raise missing_field("X-Customer-Last-Name")
 
         customer = await self.create(
             keycloak_user_id=keycloak_user_id,
@@ -57,12 +74,18 @@ class CustomerRepository(BaseRepository[CustomerDB]):
         self,
         customer_id: UUID,
         payload: CustomerUpdate,
-    ) -> CustomerDB | None:
+    ) -> CustomerDB:
         """Partially update a customer record. Returns the updated record."""
         data = payload.model_dump(exclude_unset=True)
         if not data:
-            return await self.get(customer_id)
-        return await self.update(customer_id, **data)
+            customer = await self.get(customer_id)
+            if customer is None:
+                raise entity_not_found("Customer", customer_id)
+            return customer
+        updated = await self.update(customer_id, **data)
+        if updated is None:
+            raise entity_not_found("Customer", customer_id)
+        return updated
 
 
 class AddressRepository(BaseRepository[AddressDB]):
