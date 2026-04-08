@@ -6,8 +6,9 @@ Covers:
     - AddressBase / AddressCreate / AddressUpdate    — Pydantic input validation
     - CustomerResponse                              — from_attributes round-trip via MagicMock
     - AddressResponse                               — from_attributes round-trip via MagicMock
-    - CustomerRepository.get_or_create              — returns existing / creates new
-    - CustomerRepository.update_customer            — empty payload, partial payload
+    - CustomerRepository.get_by_keycloak_id_or_404 — found, not found (404)
+    - CustomerRepository.get_or_create              — returns existing / creates new / missing fields (422)
+    - CustomerRepository.update_customer            — empty payload, partial payload, update returns None (404)
     - AddressRepository._clear_default              — issues correct UPDATE via session
     - AddressRepository.create_address              — clears default when is_default=True
     - AddressRepository.update_address              — 404 not found, 403 wrong owner, happy path
@@ -19,7 +20,7 @@ from datetime import datetime, UTC
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
-from app.shared.exceptions.errors import AuthorizationError, NotFoundError
+from app.shared.exceptions.errors import AuthorizationError, NotFoundError, ValidationError
 from app.services.customers.models import (
     AddressCreate,
     AddressResponse,
@@ -277,6 +278,27 @@ class TestCustomerRepository:
         r = CustomerRepository(session)
         return r
 
+    # --- get_by_keycloak_id_or_404 ---
+
+    @pytest.mark.asyncio
+    async def test_get_by_keycloak_id_or_404_returns_customer(self, repo):
+        existing = _make_customer()
+        repo.get_by_keycloak_id = AsyncMock(return_value=existing)
+
+        result = await repo.get_by_keycloak_id_or_404("kc-001")
+
+        assert result is existing
+
+    @pytest.mark.asyncio
+    async def test_get_by_keycloak_id_or_404_raises_404_when_missing(self, repo):
+        repo.get_by_keycloak_id = AsyncMock(return_value=None)
+
+        with pytest.raises(NotFoundError) as exc_info:
+            await repo.get_by_keycloak_id_or_404("kc-ghost")
+
+        assert exc_info.value.error_code.value == "entity_not_found"
+        assert "kc-ghost" in exc_info.value.message
+
     @pytest.mark.asyncio
     async def test_get_or_create_returns_existing(self, repo):
         existing = _make_customer()
@@ -315,6 +337,48 @@ class TestCustomerRepository:
         )
 
     @pytest.mark.asyncio
+    async def test_get_or_create_raises_422_when_email_missing(self, repo):
+        repo.get_by_keycloak_id = AsyncMock(return_value=None)
+
+        with pytest.raises(ValidationError) as exc_info:
+            await repo.get_or_create(
+                keycloak_user_id="kc-new",
+                email=None,
+                first_name="New",
+                last_name="User",
+            )
+
+        assert "X-Customer-Email" in exc_info.value.message
+
+    @pytest.mark.asyncio
+    async def test_get_or_create_raises_422_when_first_name_missing(self, repo):
+        repo.get_by_keycloak_id = AsyncMock(return_value=None)
+
+        with pytest.raises(ValidationError) as exc_info:
+            await repo.get_or_create(
+                keycloak_user_id="kc-new",
+                email="new@example.com",
+                first_name=None,
+                last_name="User",
+            )
+
+        assert "X-Customer-First-Name" in exc_info.value.message
+
+    @pytest.mark.asyncio
+    async def test_get_or_create_raises_422_when_last_name_missing(self, repo):
+        repo.get_by_keycloak_id = AsyncMock(return_value=None)
+
+        with pytest.raises(ValidationError) as exc_info:
+            await repo.get_or_create(
+                keycloak_user_id="kc-new",
+                email="new@example.com",
+                first_name="New",
+                last_name=None,
+            )
+
+        assert "X-Customer-Last-Name" in exc_info.value.message
+
+    @pytest.mark.asyncio
     async def test_update_customer_empty_payload_returns_existing(self, repo):
         existing = _make_customer()
         repo.get = AsyncMock(return_value=existing)
@@ -337,6 +401,13 @@ class TestCustomerRepository:
 
         repo.update.assert_awaited_once_with(customer_id, first_name="Changed")
         assert result is updated
+
+    @pytest.mark.asyncio
+    async def test_update_customer_update_returns_none_raises_404(self, repo):
+        repo.update = AsyncMock(return_value=None)
+
+        with pytest.raises(NotFoundError):
+            await repo.update_customer(uuid4(), CustomerUpdate(first_name="Changed"))
 
 
 # ---------------------------------------------------------------------------
