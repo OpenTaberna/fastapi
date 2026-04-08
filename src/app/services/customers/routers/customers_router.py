@@ -11,20 +11,20 @@ FastAPI router for customer profile and address endpoints (Phase 0/1):
     DELETE /customers/me/addresses/{id}     — Delete an address
 """
 
+from dataclasses import dataclass
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.shared.database.session import get_session_dependency
-from app.shared.exceptions import entity_not_found, missing_field
+from app.shared.exceptions import missing_field
 from app.shared.logger import get_logger
 
 from ..models import (
     AddressCreate,
     AddressResponse,
     AddressUpdate,
-    CustomerDB,
     CustomerResponse,
     CustomerUpdate,
 )
@@ -63,25 +63,42 @@ async def _get_keycloak_id(
 
 
 # ---------------------------------------------------------------------------
-# Shared helper
+# Creation headers dependency
 # ---------------------------------------------------------------------------
 
 
-async def _get_customer_or_404(
-    keycloak_user_id: str,
-    session: AsyncSession,
-) -> CustomerDB:
-    """
-    Look up the customer by Keycloak ID and raise 404 if not found.
+@dataclass
+class _CreationHeaders:
+    """Optional headers only needed when auto-creating a profile via GET /me."""
 
-    Used by all endpoints except GET /me (which auto-creates the profile).
-    Callers should have previously hit GET /me to initialise the profile.
-    """
-    repo = get_customer_repository(session)
-    customer = await repo.get_by_keycloak_id(keycloak_user_id)
-    if customer is None:
-        raise entity_not_found("Customer", keycloak_user_id)
-    return customer
+    email: str | None
+    first_name: str | None
+    last_name: str | None
+
+
+async def _get_creation_headers(
+    x_customer_email: str | None = Header(
+        default=None,
+        alias="X-Customer-Email",
+        description="[Dev-only] Required only on first call (profile creation). Customer email address.",
+    ),
+    x_customer_first_name: str | None = Header(
+        default=None,
+        alias="X-Customer-First-Name",
+        description="[Dev-only] Required only on first call (profile creation). Customer given name.",
+    ),
+    x_customer_last_name: str | None = Header(
+        default=None,
+        alias="X-Customer-Last-Name",
+        description="[Dev-only] Required only on first call (profile creation). Customer family name.",
+    ),
+) -> _CreationHeaders:
+    """Collect optional profile-creation headers — validation is deferred to the handler."""
+    return _CreationHeaders(
+        email=x_customer_email,
+        first_name=x_customer_first_name,
+        last_name=x_customer_last_name,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -102,21 +119,7 @@ async def _get_customer_or_404(
 )
 async def get_my_profile(
     keycloak_user_id: str = Depends(_get_keycloak_id),
-    x_customer_email: str | None = Header(
-        default=None,
-        alias="X-Customer-Email",
-        description="[Dev-only] Required only on first call (profile creation). Customer email address.",
-    ),
-    x_customer_first_name: str | None = Header(
-        default=None,
-        alias="X-Customer-First-Name",
-        description="[Dev-only] Required only on first call (profile creation). Customer given name.",
-    ),
-    x_customer_last_name: str | None = Header(
-        default=None,
-        alias="X-Customer-Last-Name",
-        description="[Dev-only] Required only on first call (profile creation). Customer family name.",
-    ),
+    creation: _CreationHeaders = Depends(_get_creation_headers),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> CustomerResponse:
     repo = get_customer_repository(session)
@@ -124,17 +127,17 @@ async def get_my_profile(
     if customer is not None:
         return CustomerResponse.model_validate(customer)
     # Profile does not exist yet — all creation fields are required.
-    if not x_customer_email:
+    if not creation.email:
         raise missing_field("X-Customer-Email")
-    if not x_customer_first_name:
+    if not creation.first_name:
         raise missing_field("X-Customer-First-Name")
-    if not x_customer_last_name:
+    if not creation.last_name:
         raise missing_field("X-Customer-Last-Name")
-    customer, _ = await repo.get_or_create(
+    customer = await repo.create(
         keycloak_user_id=keycloak_user_id,
-        email=x_customer_email,
-        first_name=x_customer_first_name,
-        last_name=x_customer_last_name,
+        email=creation.email,
+        first_name=creation.first_name,
+        last_name=creation.last_name,
     )
     await session.commit()
     await session.refresh(customer)
@@ -162,8 +165,8 @@ async def update_my_profile(
     keycloak_user_id: str = Depends(_get_keycloak_id),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> CustomerResponse:
-    customer = await _get_customer_or_404(keycloak_user_id, session)
     repo = get_customer_repository(session)
+    customer = await repo.get_by_keycloak_id_or_404(keycloak_user_id)
     updated = await repo.update_customer(customer.id, payload)
     await session.commit()
     await session.refresh(updated)
@@ -189,7 +192,8 @@ async def list_my_addresses(
     keycloak_user_id: str = Depends(_get_keycloak_id),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> list[AddressResponse]:
-    customer = await _get_customer_or_404(keycloak_user_id, session)
+    customer_repo = get_customer_repository(session)
+    customer = await customer_repo.get_by_keycloak_id_or_404(keycloak_user_id)
     address_repo = get_address_repository(session)
     addresses = await address_repo.get_for_customer(customer.id)
     return [AddressResponse.model_validate(a) for a in addresses]
@@ -217,7 +221,8 @@ async def create_my_address(
     keycloak_user_id: str = Depends(_get_keycloak_id),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> AddressResponse:
-    customer = await _get_customer_or_404(keycloak_user_id, session)
+    customer_repo = get_customer_repository(session)
+    customer = await customer_repo.get_by_keycloak_id_or_404(keycloak_user_id)
     address_repo = get_address_repository(session)
     address = await address_repo.create_address(customer.id, payload)
     await session.commit()
@@ -251,7 +256,8 @@ async def update_my_address(
     keycloak_user_id: str = Depends(_get_keycloak_id),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> AddressResponse:
-    customer = await _get_customer_or_404(keycloak_user_id, session)
+    customer_repo = get_customer_repository(session)
+    customer = await customer_repo.get_by_keycloak_id_or_404(keycloak_user_id)
     address_repo = get_address_repository(session)
     address = await address_repo.update_address(address_id, customer.id, payload)
     await session.commit()
@@ -281,7 +287,8 @@ async def delete_my_address(
     keycloak_user_id: str = Depends(_get_keycloak_id),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> None:
-    customer = await _get_customer_or_404(keycloak_user_id, session)
+    customer_repo = get_customer_repository(session)
+    customer = await customer_repo.get_by_keycloak_id_or_404(keycloak_user_id)
     address_repo = get_address_repository(session)
     await address_repo.delete_address(address_id, customer.id)
     await session.commit()
