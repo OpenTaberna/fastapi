@@ -20,10 +20,11 @@ logger = get_logger(__name__)
 _ALLOWED_TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
     OrderStatus.DRAFT: {OrderStatus.PENDING_PAYMENT, OrderStatus.CANCELLED},
     OrderStatus.PENDING_PAYMENT: {OrderStatus.PAID, OrderStatus.CANCELLED},
-    OrderStatus.PAID: {OrderStatus.READY_TO_SHIP},
-    OrderStatus.READY_TO_SHIP: {OrderStatus.SHIPPED},
-    OrderStatus.SHIPPED: set(),
+    OrderStatus.PAID: {OrderStatus.READY_TO_SHIP, OrderStatus.REFUNDED},
+    OrderStatus.READY_TO_SHIP: {OrderStatus.SHIPPED, OrderStatus.REFUNDED},
+    OrderStatus.SHIPPED: {OrderStatus.REFUNDED},
     OrderStatus.CANCELLED: set(),
+    OrderStatus.REFUNDED: set(),  # terminal — no further transitions
 }
 
 
@@ -34,10 +35,11 @@ def validate_status_transition(order: OrderDB, target_status: OrderStatus) -> No
     Valid transitions:
         DRAFT            → PENDING_PAYMENT | CANCELLED
         PENDING_PAYMENT  → PAID | CANCELLED
-        PAID             → READY_TO_SHIP
-        READY_TO_SHIP    → SHIPPED
-        SHIPPED          → (terminal — no transitions)
+        PAID             → READY_TO_SHIP | REFUNDED
+        READY_TO_SHIP    → SHIPPED | REFUNDED
+        SHIPPED          → REFUNDED
         CANCELLED        → (terminal — no transitions)
+        REFUNDED         → (terminal — no transitions)
 
     Args:
         order:         The current OrderDB row.
