@@ -38,3 +38,6 @@ from app.services.shipments.models.shipments_db_models import ShipmentDB  # noqa
 
 # Fulfillment outbox
 from app.services.fulfillment.outbox.models.outbox_db_models import OutboxEventDB  # noqa: F401
+
+# Returns (RMA)
+from app.services.returns.models.returns_db_models import ReturnDB  # noqa: F401
