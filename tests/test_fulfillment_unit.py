@@ -1287,6 +1287,26 @@ class TestBuildOutboxCron:
     def test_interval_change_changes_schedule(self):
         assert self._cron_for(15).second != self._cron_for(30).second
 
+    def test_worker_settings_cron_is_derived_from_the_setting(self):
+        # The original bug was not in the mapping but in the wiring:
+        # WorkerSettings hard-coded a 60s cron and never read the setting.
+        # Assert the registered job is the one the builder produces.
+        from app.worker import WorkerSettings
+
+        registered = WorkerSettings.cron_jobs[0]
+        expected = _build_outbox_cron(poll_outbox)
+        assert registered.second == expected.second
+        assert registered.minute == expected.minute
+        assert registered.hour == expected.hour
+
+    def test_worker_settings_does_not_use_the_old_fixed_minute_schedule(self):
+        # The replaced code was cron(poll_outbox, minute={*range(0,60)}, second=0),
+        # which fires once a minute regardless of outbox_poll_interval.
+        from app.worker import WorkerSettings
+
+        registered = WorkerSettings.cron_jobs[0]
+        assert not (registered.minute == set(range(60)) and registered.second == 0)
+
 
 # ---------------------------------------------------------------------------
 # Outbox attempt ceiling — stops infinite re-enqueue of a broken event
