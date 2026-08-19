@@ -12,11 +12,11 @@ Covers:
 
 import pytest
 from datetime import datetime, UTC
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 from uuid import UUID, uuid4
 
 from app.shared.exceptions.enums import ErrorCategory, ErrorCode
-from app.shared.exceptions.errors import AuthorizationError, BusinessRuleError, ValidationError
+from app.shared.exceptions.errors import AuthorizationError, BusinessRuleError
 from app.services.inventory.models import (
     InventoryItemCreate,
     InventoryItemResponse,
@@ -173,7 +173,9 @@ class TestInventoryItemResponse:
 
     def test_from_orm_mock(self):
         uid = uuid4()
-        db_item = _make_db_item(sku="TABLE-OAK-002", on_hand=75, reserved=3, inventory_id=uid)
+        db_item = _make_db_item(
+            sku="TABLE-OAK-002", on_hand=75, reserved=3, inventory_id=uid
+        )
         response = InventoryItemResponse.model_validate(db_item)
 
         assert response.id == uid
@@ -262,8 +264,6 @@ class TestOnHandReservedConstraint:
 
     @pytest.mark.asyncio
     async def test_on_hand_below_reserved_raises(self):
-        from app.shared.exceptions.errors import BusinessRuleError
-        from app.shared.exceptions.enums import ErrorCode
 
         # Replicate the guard condition from update_inventory_item
         current_reserved = 10
