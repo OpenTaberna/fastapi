@@ -22,11 +22,13 @@ import uuid
 import pytest
 import requests
 
+from auth_helpers import admin_headers, customer_headers, other_customer_headers
+
 _BASE = os.getenv("TEST_API_URL", "http://localhost:8000")
 RETURNS_URL = f"{_BASE}/v1/orders"
 ADMIN_RETURNS_URL = f"{_BASE}/v1/admin/returns"
 
-ADMIN_HEADERS = {"X-Admin-Key": "dev"}
+ADMIN_HEADERS = admin_headers()
 
 
 def _psql(sql: str) -> None:
@@ -49,10 +51,6 @@ def _psql(sql: str) -> None:
     )
 
 
-def _customer_headers(customer_id: str) -> dict:
-    return {"X-Customer-ID": customer_id}
-
-
 def _reason(text: str = "Item arrived damaged in transit") -> dict:
     return {"reason": text}
 
@@ -64,26 +62,21 @@ def _reason(text: str = "Item arrived damaged in transit") -> dict:
 
 @pytest.fixture(scope="module")
 def customer():
-    cid = str(uuid.uuid4())
-    u = uuid.uuid4().hex[:8]
-    _psql(
-        f"INSERT INTO customers (id, keycloak_user_id, email, first_name, last_name) "
-        f"VALUES ('{cid}', 'kc-ret-{u}', 'ret-{u}@returns-test.example', 'Ret', 'Test');"
-    )
-    yield cid
-    _psql(f"DELETE FROM customers WHERE id = '{cid}';")
+    """
+    The seeded customer, resolved through the API so the profile exists and its
+    id matches what the token will resolve to.
+    """
+    headers = customer_headers()
+    body = requests.get(f"{_BASE}/v1/customers/me", headers=headers, timeout=20).json()
+    return {"id": body["id"], "headers": headers}
 
 
 @pytest.fixture(scope="module")
 def other_customer():
-    cid = str(uuid.uuid4())
-    u = uuid.uuid4().hex[:8]
-    _psql(
-        f"INSERT INTO customers (id, keycloak_user_id, email, first_name, last_name) "
-        f"VALUES ('{cid}', 'kc-ret-o-{u}', 'ret-o-{u}@returns-test.example', 'Oth', 'Test');"
-    )
-    yield cid
-    _psql(f"DELETE FROM customers WHERE id = '{cid}';")
+    """A second account, for the cross-customer refusal."""
+    headers = other_customer_headers()
+    body = requests.get(f"{_BASE}/v1/customers/me", headers=headers, timeout=20).json()
+    return {"id": body["id"], "headers": headers}
 
 
 def _make_order(customer_id: str, status: str) -> str:
@@ -98,7 +91,7 @@ def _make_order(customer_id: str, status: str) -> str:
 
 @pytest.fixture
 def shipped_order(customer):
-    order_id = _make_order(customer, "shipped")
+    order_id = _make_order(customer["id"], "shipped")
     yield order_id
     _psql(f"DELETE FROM returns WHERE order_id = '{order_id}';")
     _psql(f"DELETE FROM orders WHERE id = '{order_id}';")
@@ -106,7 +99,7 @@ def shipped_order(customer):
 
 @pytest.fixture
 def paid_order(customer):
-    order_id = _make_order(customer, "paid")
+    order_id = _make_order(customer["id"], "paid")
     yield order_id
     _psql(f"DELETE FROM orders WHERE id = '{order_id}';")
 
@@ -117,7 +110,7 @@ def filed_return(shipped_order, customer):
     resp = requests.post(
         f"{RETURNS_URL}/{shipped_order}/returns",
         json=_reason(),
-        headers=_customer_headers(customer),
+        headers=customer["headers"],
     )
     assert resp.status_code == 201
     return resp.json()
@@ -134,7 +127,7 @@ class TestCreateReturn:
         resp = requests.post(
             f"{RETURNS_URL}/{shipped_order}/returns",
             json=_reason(),
-            headers=_customer_headers(customer),
+            headers=customer["headers"],
         )
         assert resp.status_code == 201
 
@@ -142,7 +135,7 @@ class TestCreateReturn:
         resp = requests.post(
             f"{RETURNS_URL}/{shipped_order}/returns",
             json=_reason(),
-            headers=_customer_headers(customer),
+            headers=customer["headers"],
         )
         body = resp.json()
         assert body["status"] == "requested"
@@ -155,7 +148,7 @@ class TestCreateReturn:
         resp = requests.post(
             f"{RETURNS_URL}/{shipped_order}/returns",
             json=_reason(),
-            headers=_customer_headers(customer),
+            headers=customer["headers"],
         )
         return_id = resp.json()["id"]
         follow_up = requests.patch(
@@ -169,13 +162,13 @@ class TestCreateReturn:
         first = requests.post(
             f"{RETURNS_URL}/{shipped_order}/returns",
             json=_reason(),
-            headers=_customer_headers(customer),
+            headers=customer["headers"],
         )
         assert first.status_code == 201
         second = requests.post(
             f"{RETURNS_URL}/{shipped_order}/returns",
             json=_reason("A completely different reason"),
-            headers=_customer_headers(customer),
+            headers=customer["headers"],
         )
         assert second.status_code == 400
 
@@ -183,7 +176,7 @@ class TestCreateReturn:
         resp = requests.post(
             f"{RETURNS_URL}/{paid_order}/returns",
             json=_reason(),
-            headers=_customer_headers(customer),
+            headers=customer["headers"],
         )
         assert resp.status_code == 400
 
@@ -191,7 +184,7 @@ class TestCreateReturn:
         resp = requests.post(
             f"{RETURNS_URL}/{uuid.uuid4()}/returns",
             json=_reason(),
-            headers=_customer_headers(customer),
+            headers=customer["headers"],
         )
         assert resp.status_code == 404
 
@@ -199,7 +192,7 @@ class TestCreateReturn:
         resp = requests.post(
             f"{RETURNS_URL}/{shipped_order}/returns",
             json=_reason(),
-            headers=_customer_headers(other_customer),
+            headers=other_customer["headers"],
         )
         assert resp.status_code == 403
 
@@ -207,7 +200,7 @@ class TestCreateReturn:
         resp = requests.post(
             f"{RETURNS_URL}/{shipped_order}/returns",
             json=_reason("broken"),
-            headers=_customer_headers(customer),
+            headers=customer["headers"],
         )
         assert resp.status_code == 422
 
@@ -215,7 +208,7 @@ class TestCreateReturn:
         resp = requests.post(
             f"{RETURNS_URL}/{shipped_order}/returns",
             json={},
-            headers=_customer_headers(customer),
+            headers=customer["headers"],
         )
         assert resp.status_code == 422
 

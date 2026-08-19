@@ -15,7 +15,7 @@ Endpoints covered:
     DELETE /v1/admin/inventory/{id}         — delete_inventory_item
 
 Auth note:
-    All endpoints require X-Admin-Key header.  In dev mode any non-empty
+    All endpoints require an administrator's Keycloak token. Any non-admin
     value is accepted.  Tests use "dev" for authorised requests and omit the
     header to exercise the 403 guard.
 """
@@ -27,9 +27,11 @@ import uuid
 import pytest
 import requests
 
+from auth_helpers import admin_headers
+
 _BASE = os.getenv("TEST_API_URL", "http://localhost:8000")
 INVENTORY_URL = f"{_BASE}/v1/admin/inventory"
-ADMIN_HEADERS = {"X-Admin-Key": "dev"}
+ADMIN_HEADERS = admin_headers()
 
 
 # ---------------------------------------------------------------------------

@@ -12,10 +12,15 @@ import zlib
 import pytest
 import requests
 
+from auth_helpers import admin_headers
+
 # API base URL — override with TEST_API_URL env var if needed
 import os
 
 API_BASE_URL = os.getenv("TEST_API_URL", "http://localhost:8000") + "/v1/items"
+
+# Catalogue writes are administration: what is listed is what customers see.
+_ADMIN = admin_headers()
 
 
 @pytest.fixture
@@ -64,12 +69,12 @@ def valid_item_data():
 @pytest.fixture
 def created_item(valid_item_data):
     """Create an item and return its UUID for cleanup."""
-    response = requests.post(API_BASE_URL + "/", json=valid_item_data)
+    response = requests.post(API_BASE_URL + "/", json=valid_item_data, headers=_ADMIN)
     assert response.status_code == 201
     item = response.json()
     yield item
     # Cleanup: delete the item after test
-    requests.delete(f"{API_BASE_URL}/{item['uuid']}")
+    requests.delete(f"{API_BASE_URL}/{item['uuid']}", headers=_ADMIN)
 
 
 @pytest.mark.integration
@@ -78,7 +83,9 @@ class TestItemCRUD:
 
     def test_create_item_success(self, valid_item_data):
         """Test creating a new item."""
-        response = requests.post(API_BASE_URL + "/", json=valid_item_data)
+        response = requests.post(
+            API_BASE_URL + "/", json=valid_item_data, headers=_ADMIN
+        )
 
         assert response.status_code == 201
         data = response.json()
@@ -89,7 +96,7 @@ class TestItemCRUD:
         assert "updated_at" in data
 
         # Cleanup
-        requests.delete(f"{API_BASE_URL}/{data['uuid']}")
+        requests.delete(f"{API_BASE_URL}/{data['uuid']}", headers=_ADMIN)
 
     def test_create_item_duplicate_sku(self, created_item):
         """Test creating item with duplicate SKU fails."""
@@ -102,7 +109,9 @@ class TestItemCRUD:
             "price": {"amount": 1000, "currency": "USD"},
         }
 
-        response = requests.post(API_BASE_URL + "/", json=duplicate_data)
+        response = requests.post(
+            API_BASE_URL + "/", json=duplicate_data, headers=_ADMIN
+        )
         assert response.status_code == 422
         assert "already exists" in response.json()["message"]
 
@@ -161,7 +170,7 @@ class TestItemCRUD:
         }
 
         response = requests.patch(
-            f"{API_BASE_URL}/{created_item['uuid']}", json=update_data
+            f"{API_BASE_URL}/{created_item['uuid']}", json=update_data, headers=_ADMIN
         )
 
         assert response.status_code == 200
@@ -177,20 +186,24 @@ class TestItemCRUD:
         fake_uuid = str(uuid.uuid4())
         update_data = {"name": "Updated"}
 
-        response = requests.patch(f"{API_BASE_URL}/{fake_uuid}", json=update_data)
+        response = requests.patch(
+            f"{API_BASE_URL}/{fake_uuid}", json=update_data, headers=_ADMIN
+        )
         assert response.status_code == 404
 
     def test_delete_item(self, valid_item_data):
         """Test deleting an item."""
         # Create item
-        create_response = requests.post(API_BASE_URL + "/", json=valid_item_data)
+        create_response = requests.post(
+            API_BASE_URL + "/", json=valid_item_data, headers=_ADMIN
+        )
         assert create_response.status_code == 201, (
             f"Failed to create item: {create_response.json()}"
         )
         item_uuid = create_response.json()["uuid"]
 
         # Delete item
-        delete_response = requests.delete(f"{API_BASE_URL}/{item_uuid}")
+        delete_response = requests.delete(f"{API_BASE_URL}/{item_uuid}", headers=_ADMIN)
         assert delete_response.status_code == 204
 
         # Verify deleted
@@ -200,7 +213,7 @@ class TestItemCRUD:
     def test_delete_item_not_found(self):
         """Test deleting non-existent item returns 404."""
         fake_uuid = str(uuid.uuid4())
-        response = requests.delete(f"{API_BASE_URL}/{fake_uuid}")
+        response = requests.delete(f"{API_BASE_URL}/{fake_uuid}", headers=_ADMIN)
         assert response.status_code == 404
 
 
@@ -219,7 +232,7 @@ class TestValidation:
             "price": {"amount": 99.99, "currency": "USD"},  # Should be int
         }
 
-        response = requests.post(API_BASE_URL + "/", json=invalid_data)
+        response = requests.post(API_BASE_URL + "/", json=invalid_data, headers=_ADMIN)
         assert response.status_code == 422
 
     def test_invalid_category_uuid(self):
@@ -233,7 +246,7 @@ class TestValidation:
             "price": {"amount": 9999, "currency": "USD"},
         }
 
-        response = requests.post(API_BASE_URL + "/", json=invalid_data)
+        response = requests.post(API_BASE_URL + "/", json=invalid_data, headers=_ADMIN)
         assert response.status_code == 422
 
     def test_missing_required_fields(self):
@@ -243,7 +256,7 @@ class TestValidation:
             # Missing sku, slug, brand, categories, price
         }
 
-        response = requests.post(API_BASE_URL + "/", json=invalid_data)
+        response = requests.post(API_BASE_URL + "/", json=invalid_data, headers=_ADMIN)
         assert response.status_code == 422
 
 
@@ -274,9 +287,6 @@ def _png_bytes(width: int = 8, height: int = 8) -> bytes:
         + chunk(b"IDAT", zlib.compress(raw))
         + chunk(b"IEND", b"")
     )
-
-
-_ADMIN = {"X-Admin-Key": "dev"}
 
 
 @pytest.mark.integration

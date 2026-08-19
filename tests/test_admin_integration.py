@@ -33,12 +33,14 @@ import os
 import pytest
 import requests
 
+from auth_helpers import admin_headers, customer_headers
+
 _BASE = os.getenv("TEST_API_URL", "http://localhost:8000")
 ADMIN_URL = f"{_BASE}/v1/admin/orders"
 ORDERS_URL = f"{_BASE}/v1/orders"
 ITEMS_URL = f"{_BASE}/v1/items"
 
-_ADMIN_HEADERS = {"X-Admin-Key": "test-admin-key"}
+_ADMIN_HEADERS = admin_headers()
 
 
 # ---------------------------------------------------------------------------
@@ -74,20 +76,14 @@ def _psql(sql: str) -> None:
 @pytest.fixture(scope="module")
 def admin_customer():
     """
-    Insert a customer row used by all admin integration tests.
+    The seeded customer these admin tests place orders as.
 
-    The customer_id is also the value we pass in X-Customer-ID when creating
-    orders on behalf of this customer.
+    Orders are attributed from the caller's token, so the id has to be the one
+    that token resolves to rather than a row inserted for the occasion.
     """
-    customer_id = str(uuid.uuid4())
-    unique = uuid.uuid4().hex[:8]
-    _psql(
-        f"INSERT INTO customers (id, keycloak_user_id, email, first_name, last_name) "
-        f"VALUES ('{customer_id}', 'kc-admin-{unique}', '{unique}@admin-test.example', "
-        f"'Admin', 'Tester');"
-    )
-    yield customer_id
-    _psql(f"DELETE FROM customers WHERE id = '{customer_id}';")
+    headers = customer_headers()
+    body = requests.get(f"{_BASE}/v1/customers/me", headers=headers, timeout=20).json()
+    return {"id": body["id"], "headers": headers}
 
 
 @pytest.fixture(scope="module")
@@ -131,13 +127,13 @@ def admin_catalogue_item():
         "custom": {},
         "system": {"version": 1, "source": "api", "locale": "en_US"},
     }
-    response = requests.post(ITEMS_URL + "/", json=payload)
+    response = requests.post(ITEMS_URL + "/", json=payload, headers=_ADMIN_HEADERS)
     assert response.status_code == 201, (
         f"admin_catalogue_item fixture failed: {response.status_code} {response.json()}"
     )
     item = response.json()
     yield item
-    requests.delete(f"{ITEMS_URL}/{item['uuid']}")
+    requests.delete(f"{ITEMS_URL}/{item['uuid']}", headers=_ADMIN_HEADERS)
 
 
 # ---------------------------------------------------------------------------
@@ -157,7 +153,7 @@ def admin_draft_order(admin_customer, admin_catalogue_item):
         "items": [{"sku": admin_catalogue_item["sku"], "quantity": 1}],
         "currency": "EUR",
     }
-    headers = {"X-Customer-ID": admin_customer}
+    headers = admin_customer["headers"]
     response = requests.post(ORDERS_URL + "/", json=payload, headers=headers)
     assert response.status_code == 201, (
         f"admin_draft_order fixture failed: {response.status_code} {response.json()}"
@@ -187,7 +183,7 @@ def admin_paid_order(admin_customer, admin_catalogue_item):
         "items": [{"sku": admin_catalogue_item["sku"], "quantity": 1}],
         "currency": "EUR",
     }
-    headers = {"X-Customer-ID": admin_customer}
+    headers = admin_customer["headers"]
     resp = requests.post(ORDERS_URL + "/", json=payload, headers=headers)
     assert resp.status_code == 201
     order = resp.json()
@@ -359,7 +355,7 @@ class TestAdminGetOrderDetail:
         )
         customer = response.json()["customer"]
         assert customer is not None
-        assert customer["id"] == admin_customer
+        assert customer["id"] == admin_customer["id"]
 
     def test_not_found_returns_404(self):
         response = requests.get(f"{ADMIN_URL}/{uuid.uuid4()}", headers=_ADMIN_HEADERS)

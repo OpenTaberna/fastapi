@@ -31,6 +31,8 @@ import os
 import pytest
 import requests
 
+from auth_helpers import admin_headers, customer_headers, other_customer_headers
+
 _BASE = os.getenv("TEST_API_URL", "http://localhost:8000")
 ORDERS_URL = f"{_BASE}/v1/orders"
 ITEMS_URL = f"{_BASE}/v1/items"
@@ -73,34 +75,24 @@ def _psql(sql: str) -> None:
 @pytest.fixture(scope="module")
 def customer():
     """
-    Insert a real customer row and return its UUID as the test customer.
+    The seeded customer, resolved through the API.
 
-    The same UUID is passed in the X-Customer-ID header so the orders router
-    stores it as customer_id and the FK constraint is satisfied.
+    Orders are attributed from the caller's token now, so the test cannot pick
+    an arbitrary customer id - it has to be the one the token resolves to, or
+    the order would be created against a different profile than the one the
+    assertions read back.
     """
-    customer_id = str(uuid.uuid4())
-    unique = uuid.uuid4().hex[:8]
-    _psql(
-        f"INSERT INTO customers (id, keycloak_user_id, email, first_name, last_name) "
-        f"VALUES ('{customer_id}', 'kc-{unique}', '{unique}@orders-test.example', "
-        f"'Orders', 'Test');"
-    )
-    yield customer_id
-    _psql(f"DELETE FROM customers WHERE id = '{customer_id}';")
+    headers = customer_headers()
+    body = requests.get(f"{_BASE}/v1/customers/me", headers=headers, timeout=20).json()
+    return {"id": body["id"], "headers": headers}
 
 
 @pytest.fixture(scope="module")
 def other_customer():
-    """Second customer used to verify 403 cross-customer access guards."""
-    customer_id = str(uuid.uuid4())
-    unique = uuid.uuid4().hex[:8]
-    _psql(
-        f"INSERT INTO customers (id, keycloak_user_id, email, first_name, last_name) "
-        f"VALUES ('{customer_id}', 'kc-other-{unique}', 'other-{unique}@orders-test.example', "
-        f"'Other', 'Test');"
-    )
-    yield customer_id
-    _psql(f"DELETE FROM customers WHERE id = '{customer_id}';")
+    """A second account, for the cross-customer 403 guards."""
+    headers = other_customer_headers()
+    body = requests.get(f"{_BASE}/v1/customers/me", headers=headers, timeout=20).json()
+    return {"id": body["id"], "headers": headers}
 
 
 # ---------------------------------------------------------------------------
@@ -152,13 +144,13 @@ def catalogue_item():
         "custom": {},
         "system": {"version": 1, "source": "api", "locale": "en_US"},
     }
-    response = requests.post(ITEMS_URL + "/", json=payload)
+    response = requests.post(ITEMS_URL + "/", json=payload, headers=admin_headers())
     assert response.status_code == 201, (
         f"catalogue_item fixture failed: {response.status_code} {response.json()}"
     )
     item = response.json()
     yield item
-    requests.delete(f"{ITEMS_URL}/{item['uuid']}")
+    requests.delete(f"{ITEMS_URL}/{item['uuid']}", headers=admin_headers())
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +168,7 @@ def draft_order(customer, catalogue_item):
         "items": [{"sku": catalogue_item["sku"], "quantity": 1}],
         "currency": "EUR",
     }
-    headers = {"X-Customer-ID": customer}
+    headers = customer["headers"]
     response = requests.post(ORDERS_URL + "/", json=payload, headers=headers)
     assert response.status_code == 201, (
         f"draft_order fixture failed: {response.status_code} {response.json()}"
@@ -198,7 +190,7 @@ class TestCreateOrder:
 
     def test_create_order_success(self, customer, catalogue_item):
         """Creating a DRAFT order returns 201 with all expected fields."""
-        headers = {"X-Customer-ID": customer}
+        headers = customer["headers"]
         payload = {
             "items": [{"sku": catalogue_item["sku"], "quantity": 2}],
             "currency": "EUR",
@@ -209,7 +201,7 @@ class TestCreateOrder:
         data = response.json()
         assert data["status"] == "draft"
         assert data["currency"] == "EUR"
-        assert data["customer_id"] == customer
+        assert data["customer_id"] == customer["id"]
         assert data["total_amount"] == catalogue_item["price"]["amount"] * 2
         assert len(data["items"]) == 1
         assert data["items"][0]["sku"] == catalogue_item["sku"]
@@ -223,7 +215,7 @@ class TestCreateOrder:
 
     def test_create_order_multiple_units_correct_total(self, customer, catalogue_item):
         """total_amount equals unit_price × quantity."""
-        headers = {"X-Customer-ID": customer}
+        headers = customer["headers"]
         payload = {
             "items": [{"sku": catalogue_item["sku"], "quantity": 3}],
             "currency": "EUR",
@@ -237,7 +229,7 @@ class TestCreateOrder:
 
     def test_create_order_unknown_sku_returns_404(self, customer):
         """Ordering a non-existent SKU returns 404."""
-        headers = {"X-Customer-ID": customer}
+        headers = customer["headers"]
         payload = {"items": [{"sku": "DOES-NOT-EXIST-XYZ", "quantity": 1}]}
         response = requests.post(ORDERS_URL + "/", json=payload, headers=headers)
 
@@ -245,7 +237,7 @@ class TestCreateOrder:
 
     def test_create_order_zero_quantity_rejected(self, customer, catalogue_item):
         """Pydantic validation: quantity=0 is rejected with 422."""
-        headers = {"X-Customer-ID": customer}
+        headers = customer["headers"]
         payload = {"items": [{"sku": catalogue_item["sku"], "quantity": 0}]}
         response = requests.post(ORDERS_URL + "/", json=payload, headers=headers)
 
@@ -253,7 +245,7 @@ class TestCreateOrder:
 
     def test_create_order_empty_items_list_rejected(self, customer):
         """Pydantic validation: empty items list is rejected with 422."""
-        headers = {"X-Customer-ID": customer}
+        headers = customer["headers"]
         payload = {"items": [], "currency": "EUR"}
         response = requests.post(ORDERS_URL + "/", json=payload, headers=headers)
 
@@ -261,7 +253,7 @@ class TestCreateOrder:
 
     def test_create_order_invalid_currency_rejected(self, customer, catalogue_item):
         """Pydantic validation: currency shorter than 3 chars is rejected with 422."""
-        headers = {"X-Customer-ID": customer}
+        headers = customer["headers"]
         payload = {
             "items": [{"sku": catalogue_item["sku"], "quantity": 1}],
             "currency": "EU",
@@ -272,7 +264,7 @@ class TestCreateOrder:
 
     def test_create_order_defaults_currency_to_eur(self, customer, catalogue_item):
         """When currency is omitted the server defaults to EUR."""
-        headers = {"X-Customer-ID": customer}
+        headers = customer["headers"]
         payload = {"items": [{"sku": catalogue_item["sku"], "quantity": 1}]}
         response = requests.post(ORDERS_URL + "/", json=payload, headers=headers)
 
@@ -293,33 +285,33 @@ class TestGetOrder:
 
     def test_get_order_success(self, customer, draft_order):
         """Fetching own order returns 200 with the correct data."""
-        headers = {"X-Customer-ID": customer}
+        headers = customer["headers"]
         response = requests.get(f"{ORDERS_URL}/{draft_order['id']}", headers=headers)
 
         assert response.status_code == 200
         data = response.json()
         assert data["id"] == draft_order["id"]
         assert data["status"] == "draft"
-        assert data["customer_id"] == customer
+        assert data["customer_id"] == customer["id"]
         assert "items" in data
 
     def test_get_order_not_found(self, customer):
         """Fetching a non-existent UUID returns 404."""
-        headers = {"X-Customer-ID": customer}
+        headers = customer["headers"]
         response = requests.get(f"{ORDERS_URL}/{uuid.uuid4()}", headers=headers)
 
         assert response.status_code == 404
 
     def test_get_order_wrong_customer_returns_403(self, other_customer, draft_order):
         """A different customer cannot read someone else's order."""
-        headers = {"X-Customer-ID": other_customer}
+        headers = other_customer["headers"]
         response = requests.get(f"{ORDERS_URL}/{draft_order['id']}", headers=headers)
 
         assert response.status_code == 403
 
     def test_get_order_invalid_uuid_returns_422(self, customer):
         """A malformed order ID returns 422."""
-        headers = {"X-Customer-ID": customer}
+        headers = customer["headers"]
         response = requests.get(f"{ORDERS_URL}/not-a-uuid", headers=headers)
 
         assert response.status_code == 422
@@ -335,7 +327,7 @@ class TestCancelOrder:
 
     def test_cancel_draft_order_success(self, customer, catalogue_item):
         """Cancelling a DRAFT order returns 204 and the order is then 404."""
-        headers = {"X-Customer-ID": customer}
+        headers = customer["headers"]
         payload = {"items": [{"sku": catalogue_item["sku"], "quantity": 1}]}
         create_resp = requests.post(ORDERS_URL + "/", json=payload, headers=headers)
         assert create_resp.status_code == 201
@@ -350,21 +342,21 @@ class TestCancelOrder:
 
     def test_cancel_not_found(self, customer):
         """Cancelling a non-existent UUID returns 404."""
-        headers = {"X-Customer-ID": customer}
+        headers = customer["headers"]
         response = requests.delete(f"{ORDERS_URL}/{uuid.uuid4()}", headers=headers)
 
         assert response.status_code == 404
 
     def test_cancel_wrong_customer_returns_403(self, other_customer, draft_order):
         """A different customer cannot cancel someone else's order."""
-        headers = {"X-Customer-ID": other_customer}
+        headers = other_customer["headers"]
         response = requests.delete(f"{ORDERS_URL}/{draft_order['id']}", headers=headers)
 
         assert response.status_code == 403
 
     def test_cancel_invalid_uuid_returns_422(self, customer):
         """A malformed order ID returns 422."""
-        headers = {"X-Customer-ID": customer}
+        headers = customer["headers"]
         response = requests.delete(f"{ORDERS_URL}/not-a-uuid", headers=headers)
 
         assert response.status_code == 422
@@ -385,7 +377,7 @@ class TestCheckoutOrder:
 
     def test_checkout_not_found(self, customer):
         """Checking out a non-existent order returns 404."""
-        headers = {"X-Customer-ID": customer}
+        headers = customer["headers"]
         response = requests.post(
             f"{ORDERS_URL}/{uuid.uuid4()}/checkout", headers=headers
         )
@@ -393,7 +385,7 @@ class TestCheckoutOrder:
 
     def test_checkout_wrong_customer_returns_403(self, other_customer, draft_order):
         """Another customer cannot check out someone else's order."""
-        headers = {"X-Customer-ID": other_customer}
+        headers = other_customer["headers"]
         response = requests.post(
             f"{ORDERS_URL}/{draft_order['id']}/checkout", headers=headers
         )
@@ -401,7 +393,7 @@ class TestCheckoutOrder:
 
     def test_checkout_cancelled_order_returns_404(self, customer, catalogue_item):
         """Checking out a soft-deleted (cancelled) order returns 404."""
-        headers = {"X-Customer-ID": customer}
+        headers = customer["headers"]
         payload = {"items": [{"sku": catalogue_item["sku"], "quantity": 1}]}
         create_resp = requests.post(ORDERS_URL + "/", json=payload, headers=headers)
         assert create_resp.status_code == 201
@@ -416,7 +408,7 @@ class TestCheckoutOrder:
 
     def test_checkout_invalid_uuid_returns_422(self, customer):
         """A malformed order ID returns 422."""
-        headers = {"X-Customer-ID": customer}
+        headers = customer["headers"]
         response = requests.post(f"{ORDERS_URL}/not-a-uuid/checkout", headers=headers)
         assert response.status_code == 422
 

@@ -138,14 +138,6 @@ class Settings(BaseSettings):
         default=300,
         description="How long the signing keys are cached before being refetched",
     )
-    auth_allow_dev_headers: bool = Field(
-        default=True,
-        description=(
-            "Accept the X-Admin-Key / X-Keycloak-User-ID development shims when no "
-            "bearer token is present. Forced off in production by a validator - "
-            "those headers are trivially forged."
-        ),
-    )
 
     # CORS
     cors_origins: list[str] = Field(default=["*"], description="Allowed CORS origins")
@@ -295,22 +287,6 @@ class Settings(BaseSettings):
             "before marking it FAILED for manual review"
         ),
     )
-
-    @field_validator("auth_allow_dev_headers")
-    @classmethod
-    def disable_dev_headers_in_production(cls, v: bool, info: Any) -> bool:
-        """
-        Refuse to honour the forgeable auth headers in production.
-
-        X-Admin-Key and X-Keycloak-User-ID let any caller claim any identity.
-        They exist so local development and the test suite do not need a live
-        Keycloak; leaving them enabled in production would make every admin
-        endpoint publicly writable.
-        """
-        env = info.data.get("environment", Environment.DEVELOPMENT)
-        if env == Environment.PRODUCTION:
-            return False
-        return v
 
     @field_validator("secret_key")
     @classmethod

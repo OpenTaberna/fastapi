@@ -15,8 +15,11 @@ Endpoints covered:
     DELETE /v1/customers/me/addresses/{id}     — delete_my_address
 
 Auth note:
-    All endpoints require X-Keycloak-User-ID.
-    GET /me additionally accepts X-Customer-Email / X-Customer-First-Name /
+    All endpoints require a Keycloak bearer token; identity comes from its
+    subject claim. There are two seeded customer accounts, so tests that once
+    invented an identity per case now share them.
+
+    Formerly documented: X-Customer-Email / X-Customer-First-Name /
     X-Customer-Last-Name on the first call (profile creation).
 """
 
@@ -26,6 +29,8 @@ import uuid
 
 import pytest
 import requests
+
+from auth_helpers import customer_headers, other_customer_headers
 
 _BASE = os.getenv("TEST_API_URL", "http://localhost:8000")
 CUSTOMERS_URL = f"{_BASE}/v1/customers"
@@ -64,23 +69,6 @@ def _psql(sql: str) -> None:
     )
 
 
-def _creation_headers(
-    kc_id: str, email: str, first: str = "Int", last: str = "Test"
-) -> dict:
-    """Return all four headers needed to auto-create a profile via GET /me."""
-    return {
-        "X-Keycloak-User-ID": kc_id,
-        "X-Customer-Email": email,
-        "X-Customer-First-Name": first,
-        "X-Customer-Last-Name": last,
-    }
-
-
-def _id_header(kc_id: str) -> dict:
-    """Return the single header needed by all non-creation endpoints."""
-    return {"X-Keycloak-User-ID": kc_id}
-
-
 def _address_payload(**overrides) -> dict:
     base = {
         "street": "Teststraße 1",
@@ -100,38 +88,31 @@ def _address_payload(**overrides) -> dict:
 @pytest.fixture(scope="module")
 def customer():
     """
-    Create a real customer profile via GET /me (auto-create path) and
-    delete the DB row in teardown.  CASCADE removes any leftover addresses.
+    The primary seeded customer, resolved through the API.
+
+    GET /me creates the profile from the token's claims on first contact, so
+    this both authenticates and guarantees the row exists.
     """
-    kc_id = _unique_kc_id()
-    email = _unique_email()
-    headers = _creation_headers(kc_id, email)
-
-    resp = requests.get(f"{CUSTOMERS_URL}/me", headers=headers)
-    assert resp.status_code == 200, (
-        f"customer fixture: GET /me failed {resp.status_code} {resp.json()}"
-    )
-    data = resp.json()
-    yield {"kc_id": kc_id, "email": email, "id": data["id"], "data": data}
-
-    _psql(f"DELETE FROM customers WHERE id = '{data['id']}';")
+    headers = customer_headers()
+    response = requests.get(f"{CUSTOMERS_URL}/me", headers=headers, timeout=20)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    yield {
+        "headers": headers,
+        "id": body["id"],
+        "kc_id": body["keycloak_user_id"],
+        "email": body["email"],
+    }
 
 
 @pytest.fixture(scope="module")
 def other_customer():
-    """Second customer — used to verify 403 cross-customer access guards."""
-    kc_id = _unique_kc_id(prefix="kc-other")
-    email = _unique_email(prefix="other")
-    headers = _creation_headers(kc_id, email, first="Other", last="Customer")
-
-    resp = requests.get(f"{CUSTOMERS_URL}/me", headers=headers)
-    assert resp.status_code == 200, (
-        f"other_customer fixture: GET /me failed {resp.status_code} {resp.json()}"
-    )
-    data = resp.json()
-    yield {"kc_id": kc_id, "email": email, "id": data["id"], "data": data}
-
-    _psql(f"DELETE FROM customers WHERE id = '{data['id']}';")
+    """A second seeded account, for cross-customer authorization checks."""
+    headers = other_customer_headers()
+    response = requests.get(f"{CUSTOMERS_URL}/me", headers=headers, timeout=20)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    yield {"headers": headers, "id": body["id"], "kc_id": body["keycloak_user_id"]}
 
 
 @pytest.fixture
@@ -146,7 +127,7 @@ def create_address(customer):
         resp = requests.post(
             f"{CUSTOMERS_URL}/me/addresses",
             json=_address_payload(**overrides),
-            headers=_id_header(customer["kc_id"]),
+            headers=customer["headers"],
         )
         assert resp.status_code == 201, (
             f"create_address fixture failed: {resp.status_code} {resp.json()}"
@@ -160,7 +141,7 @@ def create_address(customer):
     for addr_id in created_ids:
         requests.delete(
             f"{CUSTOMERS_URL}/me/addresses/{addr_id}",
-            headers=_id_header(customer["kc_id"]),
+            headers=customer["headers"],
         )
 
 
@@ -173,7 +154,7 @@ class TestGetMyProfile:
     def test_returns_200_for_existing_customer(self, customer):
         resp = requests.get(
             f"{CUSTOMERS_URL}/me",
-            headers=_id_header(customer["kc_id"]),
+            headers=customer["headers"],
         )
         assert resp.status_code == 200
         body = resp.json()
@@ -184,7 +165,7 @@ class TestGetMyProfile:
     def test_response_contains_expected_fields(self, customer):
         resp = requests.get(
             f"{CUSTOMERS_URL}/me",
-            headers=_id_header(customer["kc_id"]),
+            headers=customer["headers"],
         )
         body = resp.json()
         for field in (
@@ -198,19 +179,6 @@ class TestGetMyProfile:
         ):
             assert field in body, f"Missing field: {field}"
 
-    def test_auto_creates_profile_on_first_call(self):
-        """A brand-new Keycloak ID with creation headers should yield 200 + new profile."""
-        kc_id = _unique_kc_id(prefix="kc-autocreate")
-        email = _unique_email(prefix="autocreate")
-        headers = _creation_headers(kc_id, email)
-
-        resp = requests.get(f"{CUSTOMERS_URL}/me", headers=headers)
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["keycloak_user_id"] == kc_id
-
-        _psql(f"DELETE FROM customers WHERE id = '{body['id']}';")
-
     def test_missing_keycloak_id_header_returns_403(self):
         # Identity is now resolved by app.authorize: with no bearer token and
         # no dev header there is no caller to act as, which is an authorization
@@ -218,45 +186,13 @@ class TestGetMyProfile:
         resp = requests.get(f"{CUSTOMERS_URL}/me")
         assert resp.status_code == 403
 
-    def test_missing_creation_headers_for_new_user_returns_422(self):
-        kc_id = _unique_kc_id(prefix="kc-nocreate")
-        resp = requests.get(
-            f"{CUSTOMERS_URL}/me",
-            headers=_id_header(kc_id),
-        )
-        assert resp.status_code == 422
-        body = resp.json()
-        assert body["error_code"] == "missing_field"
-
-    def test_missing_creation_headers_error_contains_field_context(self):
-        kc_id = _unique_kc_id(prefix="kc-ctx")
-        resp = requests.get(
-            f"{CUSTOMERS_URL}/me",
-            headers=_id_header(kc_id),
-        )
-        body = resp.json()
-        assert body["details"]["field"] == "X-Customer-Email"
-
-    def test_second_call_without_creation_headers_succeeds(self, customer):
-        """After profile exists, creation headers are not required on subsequent calls."""
-        resp = requests.get(
-            f"{CUSTOMERS_URL}/me",
-            headers=_id_header(customer["kc_id"]),
-        )
-        assert resp.status_code == 200
-
-
-# ---------------------------------------------------------------------------
-# PATCH /me — update_my_profile
-# ---------------------------------------------------------------------------
-
 
 class TestUpdateMyProfile:
     def test_update_first_name(self, customer):
         resp = requests.patch(
             f"{CUSTOMERS_URL}/me",
             json={"first_name": "Updated"},
-            headers=_id_header(customer["kc_id"]),
+            headers=customer["headers"],
         )
         assert resp.status_code == 200
         assert resp.json()["first_name"] == "Updated"
@@ -265,14 +201,14 @@ class TestUpdateMyProfile:
         requests.patch(
             f"{CUSTOMERS_URL}/me",
             json={"first_name": "Int"},
-            headers=_id_header(customer["kc_id"]),
+            headers=customer["headers"],
         )
 
     def test_update_last_name(self, customer):
         resp = requests.patch(
             f"{CUSTOMERS_URL}/me",
             json={"last_name": "UpdatedLast"},
-            headers=_id_header(customer["kc_id"]),
+            headers=customer["headers"],
         )
         assert resp.status_code == 200
         assert resp.json()["last_name"] == "UpdatedLast"
@@ -280,32 +216,22 @@ class TestUpdateMyProfile:
         requests.patch(
             f"{CUSTOMERS_URL}/me",
             json={"last_name": "Test"},
-            headers=_id_header(customer["kc_id"]),
+            headers=customer["headers"],
         )
 
     def test_empty_payload_returns_200(self, customer):
         resp = requests.patch(
             f"{CUSTOMERS_URL}/me",
             json={},
-            headers=_id_header(customer["kc_id"]),
+            headers=customer["headers"],
         )
         assert resp.status_code == 200
-
-    def test_unknown_customer_returns_404(self):
-        resp = requests.patch(
-            f"{CUSTOMERS_URL}/me",
-            json={"first_name": "Ghost"},
-            headers=_id_header(_unique_kc_id(prefix="kc-ghost")),
-        )
-        assert resp.status_code == 404
-        body = resp.json()
-        assert body["error_code"] == "entity_not_found"
 
     def test_invalid_email_returns_422(self, customer):
         resp = requests.patch(
             f"{CUSTOMERS_URL}/me",
             json={"email": "not-an-email"},
-            headers=_id_header(customer["kc_id"]),
+            headers=customer["headers"],
         )
         assert resp.status_code == 422
 
@@ -326,7 +252,7 @@ class TestListMyAddresses:
     def test_returns_empty_list_when_no_addresses(self, customer):
         resp = requests.get(
             f"{CUSTOMERS_URL}/me/addresses",
-            headers=_id_header(customer["kc_id"]),
+            headers=customer["headers"],
         )
         assert resp.status_code == 200
         assert isinstance(resp.json(), list)
@@ -337,18 +263,11 @@ class TestListMyAddresses:
 
         resp = requests.get(
             f"{CUSTOMERS_URL}/me/addresses",
-            headers=_id_header(customer["kc_id"]),
+            headers=customer["headers"],
         )
         assert resp.status_code == 200
         addresses = resp.json()
         assert len(addresses) >= 2
-
-    def test_unknown_customer_returns_404(self):
-        resp = requests.get(
-            f"{CUSTOMERS_URL}/me/addresses",
-            headers=_id_header(_unique_kc_id(prefix="kc-ghost")),
-        )
-        assert resp.status_code == 404
 
     def test_missing_keycloak_header_returns_403(self):
         # Identity is now resolved by app.authorize: with no bearer token and
@@ -396,26 +315,18 @@ class TestCreateMyAddress:
         # Re-fetch the first address — it should no longer be default.
         resp = requests.get(
             f"{CUSTOMERS_URL}/me/addresses",
-            headers=_id_header(customer["kc_id"]),
+            headers=customer["headers"],
         )
         addresses = {a["id"]: a for a in resp.json()}
         assert addresses[first["id"]]["is_default"] is False
         assert addresses[second["id"]]["is_default"] is True
-
-    def test_unknown_customer_returns_404(self):
-        resp = requests.post(
-            f"{CUSTOMERS_URL}/me/addresses",
-            json=_address_payload(),
-            headers=_id_header(_unique_kc_id(prefix="kc-ghost")),
-        )
-        assert resp.status_code == 404
 
     def test_missing_street_returns_422(self, customer):
         payload = {"city": "Berlin", "zip_code": "10115", "country": "DE"}
         resp = requests.post(
             f"{CUSTOMERS_URL}/me/addresses",
             json=payload,
-            headers=_id_header(customer["kc_id"]),
+            headers=customer["headers"],
         )
         assert resp.status_code == 422
 
@@ -423,7 +334,7 @@ class TestCreateMyAddress:
         resp = requests.post(
             f"{CUSTOMERS_URL}/me/addresses",
             json=_address_payload(country="GERMANY"),
-            headers=_id_header(customer["kc_id"]),
+            headers=customer["headers"],
         )
         assert resp.status_code == 422
 
@@ -439,7 +350,7 @@ class TestUpdateMyAddress:
         resp = requests.patch(
             f"{CUSTOMERS_URL}/me/addresses/{addr['id']}",
             json={"city": "Frankfurt"},
-            headers=_id_header(customer["kc_id"]),
+            headers=customer["headers"],
         )
         assert resp.status_code == 200
         assert resp.json()["city"] == "Frankfurt"
@@ -449,7 +360,7 @@ class TestUpdateMyAddress:
         resp = requests.patch(
             f"{CUSTOMERS_URL}/me/addresses/{addr['id']}",
             json={},
-            headers=_id_header(customer["kc_id"]),
+            headers=customer["headers"],
         )
         assert resp.status_code == 200
 
@@ -457,7 +368,7 @@ class TestUpdateMyAddress:
         resp = requests.patch(
             f"{CUSTOMERS_URL}/me/addresses/{uuid.uuid4()}",
             json={"city": "X"},
-            headers=_id_header(customer["kc_id"]),
+            headers=customer["headers"],
         )
         assert resp.status_code == 404
         assert resp.json()["error_code"] == "entity_not_found"
@@ -467,7 +378,7 @@ class TestUpdateMyAddress:
         resp = requests.patch(
             f"{CUSTOMERS_URL}/me/addresses/{addr['id']}",
             json={"city": "X"},
-            headers=_id_header(other_customer["kc_id"]),
+            headers=other_customer["headers"],
         )
         assert resp.status_code == 403
         assert resp.json()["error_code"] == "access_denied"
@@ -476,23 +387,9 @@ class TestUpdateMyAddress:
         resp = requests.patch(
             f"{CUSTOMERS_URL}/me/addresses/not-a-uuid",
             json={"city": "X"},
-            headers=_id_header(customer["kc_id"]),
+            headers=customer["headers"],
         )
         assert resp.status_code == 422
-
-    def test_unknown_customer_returns_404(self, create_address, customer):
-        addr = create_address()
-        resp = requests.patch(
-            f"{CUSTOMERS_URL}/me/addresses/{addr['id']}",
-            json={"city": "X"},
-            headers=_id_header(_unique_kc_id(prefix="kc-ghost")),
-        )
-        assert resp.status_code == 404
-
-
-# ---------------------------------------------------------------------------
-# DELETE /me/addresses/{id} — delete_my_address
-# ---------------------------------------------------------------------------
 
 
 class TestDeleteMyAddress:
@@ -501,14 +398,14 @@ class TestDeleteMyAddress:
         resp = requests.post(
             f"{CUSTOMERS_URL}/me/addresses",
             json=_address_payload(),
-            headers=_id_header(customer["kc_id"]),
+            headers=customer["headers"],
         )
         assert resp.status_code == 201
         addr_id = resp.json()["id"]
 
         del_resp = requests.delete(
             f"{CUSTOMERS_URL}/me/addresses/{addr_id}",
-            headers=_id_header(customer["kc_id"]),
+            headers=customer["headers"],
         )
         assert del_resp.status_code == 204
         assert del_resp.content == b""
@@ -517,17 +414,17 @@ class TestDeleteMyAddress:
         resp = requests.post(
             f"{CUSTOMERS_URL}/me/addresses",
             json=_address_payload(city="ToDelete"),
-            headers=_id_header(customer["kc_id"]),
+            headers=customer["headers"],
         )
         addr_id = resp.json()["id"]
         requests.delete(
             f"{CUSTOMERS_URL}/me/addresses/{addr_id}",
-            headers=_id_header(customer["kc_id"]),
+            headers=customer["headers"],
         )
 
         list_resp = requests.get(
             f"{CUSTOMERS_URL}/me/addresses",
-            headers=_id_header(customer["kc_id"]),
+            headers=customer["headers"],
         )
         ids = [a["id"] for a in list_resp.json()]
         assert addr_id not in ids
@@ -535,7 +432,7 @@ class TestDeleteMyAddress:
     def test_address_not_found_returns_404(self, customer):
         resp = requests.delete(
             f"{CUSTOMERS_URL}/me/addresses/{uuid.uuid4()}",
-            headers=_id_header(customer["kc_id"]),
+            headers=customer["headers"],
         )
         assert resp.status_code == 404
         assert resp.json()["error_code"] == "entity_not_found"
@@ -544,7 +441,7 @@ class TestDeleteMyAddress:
         addr = create_address()  # belongs to `customer`
         resp = requests.delete(
             f"{CUSTOMERS_URL}/me/addresses/{addr['id']}",
-            headers=_id_header(other_customer["kc_id"]),
+            headers=other_customer["headers"],
         )
         assert resp.status_code == 403
         assert resp.json()["error_code"] == "access_denied"
@@ -552,14 +449,50 @@ class TestDeleteMyAddress:
     def test_invalid_uuid_returns_422(self, customer):
         resp = requests.delete(
             f"{CUSTOMERS_URL}/me/addresses/not-a-uuid",
-            headers=_id_header(customer["kc_id"]),
+            headers=customer["headers"],
         )
         assert resp.status_code == 422
 
-    def test_unknown_customer_returns_404(self, create_address, customer):
-        addr = create_address()
-        resp = requests.delete(
-            f"{CUSTOMERS_URL}/me/addresses/{addr['id']}",
-            headers=_id_header(_unique_kc_id(prefix="kc-ghost")),
-        )
-        assert resp.status_code == 404
+
+# ---------------------------------------------------------------------------
+# What replaced the removed cases
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+class TestIdentityComesFromTheToken:
+    """
+    The cases this class replaces used to invent an identity per test by
+    sending X-Keycloak-User-ID and X-Customer-* headers. Those headers are gone:
+    anyone who could set them could read and modify any customer's data.
+    """
+
+    def test_profile_is_created_from_the_token_on_first_contact(self, customer):
+        # No creation headers exist any more - e-mail and name come from the
+        # verified token, so a first call cannot fail for want of them.
+        response = requests.get(f"{CUSTOMERS_URL}/me", headers=customer["headers"])
+        assert response.status_code == 200
+        body = response.json()
+        assert body["email"]
+        assert body["first_name"]
+
+    def test_repeated_calls_resolve_to_the_same_profile(self, customer):
+        first = requests.get(f"{CUSTOMERS_URL}/me", headers=customer["headers"]).json()
+        second = requests.get(f"{CUSTOMERS_URL}/me", headers=customer["headers"]).json()
+        assert first["id"] == second["id"]
+
+    def test_a_forged_header_cannot_name_a_different_subject(self, customer):
+        # The header is ignored outright; identity is the token's subject.
+        headers = customer["headers"] | {"X-Keycloak-User-ID": "someone-else"}
+        body = requests.get(f"{CUSTOMERS_URL}/me", headers=headers).json()
+        assert body["keycloak_user_id"] == customer["kc_id"]
+
+    def test_two_accounts_resolve_to_different_profiles(self, customer, other_customer):
+        assert customer["id"] != other_customer["id"]
+
+    def test_no_token_is_refused(self):
+        assert requests.get(f"{CUSTOMERS_URL}/me").status_code == 403
+
+    def test_a_garbage_token_is_refused(self):
+        headers = {"Authorization": "Bearer not.a.real.token"}
+        assert requests.get(f"{CUSTOMERS_URL}/me", headers=headers).status_code == 403

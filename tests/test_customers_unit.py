@@ -34,6 +34,7 @@ from app.services.customers.models import (
     CustomerUpdate,
 )
 from app.services.customers.models.customers_models import CustomerBase
+from app.authorize import Principal
 from app.services.customers.dependencies import (
     CreationClaims,
     get_creation_claims,
@@ -633,67 +634,50 @@ class TestAddressRepository:
 
 class TestCustomerDependencies:
     """
-    The auth shim and the creation-claims dataclass belong to the service's
-    dependency module, not to the router, so Keycloak can replace them in
-    one place without touching a single route handler.
+    Identity comes from the verified token only.
+
+    The X-Keycloak-User-ID and X-Customer-* headers are gone: a caller able to
+    state their own subject and e-mail could claim any identity.
     """
 
     @pytest.mark.asyncio
-    async def test_get_keycloak_id_returns_subject_claim(self):
-        got = await get_keycloak_id(principal=None, x_keycloak_user_id="kc-123")
-        assert got == "kc-123"
+    async def test_get_keycloak_id_returns_the_token_subject(self):
+        principal = Principal(subject="kc-123", roles=frozenset({"customer"}))
+        assert await get_keycloak_id(principal=principal) == "kc-123"
 
     @pytest.mark.asyncio
-    async def test_get_creation_claims_collects_all_headers(self):
-        claims = await get_creation_claims(
-            principal=None,
-            x_customer_email="a@b.c",
-            x_customer_first_name="Jane",
-            x_customer_last_name="Doe",
-            x_customer_phone=None,
+    async def test_get_keycloak_id_refuses_an_unauthenticated_caller(self):
+        with pytest.raises(AuthorizationError):
+            await get_keycloak_id(principal=None)
+
+    @pytest.mark.asyncio
+    async def test_creation_claims_come_from_the_token(self):
+        principal = Principal(
+            subject="kc-1",
+            email="a@b.c",
+            first_name="Jane",
+            last_name="Doe",
+            phone="+49 30 1",
         )
+        claims = await get_creation_claims(principal=principal)
         assert claims == CreationClaims(
-            email="a@b.c", first_name="Jane", last_name="Doe", phone=None
+            email="a@b.c", first_name="Jane", last_name="Doe", phone="+49 30 1"
         )
 
     @pytest.mark.asyncio
-    async def test_get_creation_claims_passes_absent_headers_through_as_none(self):
-        claims = await get_creation_claims(
-            principal=None,
-            x_customer_email=None,
-            x_customer_first_name=None,
-            x_customer_last_name=None,
-            x_customer_phone=None,
-        )
+    async def test_creation_claims_are_empty_without_a_token(self):
+        claims = await get_creation_claims(principal=None)
         assert claims == CreationClaims(
             email=None, first_name=None, last_name=None, phone=None
         )
 
-    def test_get_creation_claims_headers_are_optional(self):
-        # FastAPI resolves these defaults per request; assert the signature
-        # declares them optional so an absent header is not a 422.
+    def test_dependencies_accept_no_header_credentials(self):
+        # A signature check, so re-adding a header credential fails loudly
+        # rather than quietly reopening customer data to anyone.
         import inspect
 
-        params = inspect.signature(get_creation_claims).parameters
-        for name in (
-            "x_customer_email",
-            "x_customer_first_name",
-            "x_customer_last_name",
-        ):
-            assert params[name].default.default is None
-
-    @pytest.mark.asyncio
-    async def test_get_creation_claims_does_not_validate(self):
-        # Validation is the service layer's job — the dependency only collects.
-        claims = await get_creation_claims(
-            principal=None,
-            x_customer_email="only@email.com",
-            x_customer_first_name=None,
-            x_customer_last_name=None,
-            x_customer_phone=None,
-        )
-        assert claims.email == "only@email.com"
-        assert claims.first_name is None
+        assert set(inspect.signature(get_keycloak_id).parameters) == {"principal"}
+        assert set(inspect.signature(get_creation_claims).parameters) == {"principal"}
 
     def test_creation_claims_is_immutable(self):
         claims = CreationClaims(email="a@b.c", first_name="Jane", last_name="Doe")
@@ -701,7 +685,6 @@ class TestCustomerDependencies:
             claims.email = "changed@example.com"
 
     def test_creation_claims_not_defined_in_router_module(self):
-        # Guards the refactor: re-adding it to the router should fail here.
         from app.services.customers.routers import customers_router as router_mod
 
         assert not hasattr(router_mod, "_CreationHeaders")

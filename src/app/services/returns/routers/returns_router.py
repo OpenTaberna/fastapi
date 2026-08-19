@@ -8,14 +8,16 @@ FastAPI router for customer-facing return requests:
 Business rules:
 - Only orders in SHIPPED or REFUNDED status may have a return filed.
 - One return per order (UNIQUE constraint enforced here before hitting the DB).
-- customer_id is injected from the request header (dev shim, same as orders router).
+- customer_id comes from the verified token, so a return cannot be filed
+  against somebody else's order.
 """
 
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.customers.dependencies import get_current_customer_id
 from app.services.orders.models.orders_models import OrderStatus
 from app.services.orders.services.orders_db_service import get_order_repository
 from app.shared.database.session import get_session_dependency
@@ -41,35 +43,6 @@ _RETURNABLE_STATUSES = frozenset(
 
 
 # ---------------------------------------------------------------------------
-# Helper: resolve customer_id from header (dev shim, matches orders_router)
-# ---------------------------------------------------------------------------
-
-
-async def _get_customer_id(
-    x_customer_id: UUID | None = Header(
-        default=None,
-        alias="X-Customer-ID",
-        description="[Dev-only] Customer UUID. Replaced by Keycloak token in production.",
-    ),
-) -> UUID:
-    """
-    Return the authenticated customer's UUID.
-
-    Development shim: reads from ``X-Customer-ID`` header.
-    Production: inject from validated Keycloak JWT.
-
-    Args:
-        x_customer_id: Optional UUID from the dev header.
-
-    Returns:
-        Customer UUID — generated if the header is absent.
-    """
-    if x_customer_id is None:
-        return uuid4()
-    return x_customer_id
-
-
-# ---------------------------------------------------------------------------
 # POST /orders/{id}/returns — File a return request
 # ---------------------------------------------------------------------------
 
@@ -91,7 +64,7 @@ async def _get_customer_id(
 async def create_return(
     order_id: UUID,
     payload: CreateReturnRequest,
-    customer_id: UUID = Depends(_get_customer_id),
+    customer_id: UUID = Depends(get_current_customer_id),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> ReturnResponse:
     """
