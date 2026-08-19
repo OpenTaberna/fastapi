@@ -68,6 +68,16 @@ class CustomerDB(Base, TimestampMixin):
         doc="Family name",
     )
 
+    phone: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+        doc=(
+            "Optional contact number, mirrored from the Keycloak phone_number "
+            "claim. Keycloak owns this field; it is copied here so order "
+            "processing and carrier handover do not need a Keycloak round-trip."
+        ),
+    )
+
     def __repr__(self) -> str:
         return (
             f"CustomerDB(id={self.id}, email={self.email!r}, "

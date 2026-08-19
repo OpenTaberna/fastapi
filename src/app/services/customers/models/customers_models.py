@@ -26,6 +26,11 @@ class CustomerBase(BaseModel):
     email: EmailStr = Field(..., description="Customer email address")
     first_name: str = Field(..., min_length=1, max_length=100, description="Given name")
     last_name: str = Field(..., min_length=1, max_length=100, description="Family name")
+    phone: str | None = Field(
+        default=None,
+        max_length=32,
+        description="Optional contact number, supplied by the customer in Keycloak",
+    )
 
 
 class CustomerCreate(CustomerBase):
@@ -40,6 +45,7 @@ class CustomerUpdate(BaseModel):
     email: EmailStr | None = None
     first_name: str | None = Field(default=None, min_length=1, max_length=100)
     last_name: str | None = Field(default=None, min_length=1, max_length=100)
+    phone: str | None = Field(default=None, max_length=32)
 
 
 class CustomerResponse(CustomerBase):

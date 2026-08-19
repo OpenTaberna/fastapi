@@ -18,9 +18,17 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.shared.database.repository import BaseRepository
-from app.shared.exceptions import access_denied, entity_not_found, missing_field
+from app.shared.logger import get_logger
+from app.shared.exceptions import (
+    access_denied,
+    duplicate_entry,
+    entity_not_found,
+    missing_field,
+)
 from ..models.customers_db_models import AddressDB, CustomerDB
 from ..models.customers_models import AddressCreate, AddressUpdate, CustomerUpdate
+
+logger = get_logger(__name__)
 
 
 class CustomerRepository(BaseRepository[CustomerDB]):
@@ -46,6 +54,7 @@ class CustomerRepository(BaseRepository[CustomerDB]):
         email: str | None,
         first_name: str | None,
         last_name: str | None,
+        phone: str | None = None,
     ) -> CustomerDB:
         """
         Create a customer profile from identity claims.
@@ -64,12 +73,14 @@ class CustomerRepository(BaseRepository[CustomerDB]):
             email:            Customer e-mail address. Required.
             first_name:       Customer given name. Required.
             last_name:        Customer family name. Required.
+            phone:            Optional contact number from the phone_number claim.
 
         Returns:
             The newly created CustomerDB row.
 
         Raises:
-            ValidationError (422): If any required claim is missing or empty.
+            ValidationError (422): If a required claim is missing, or the e-mail
+                already belongs to a different Keycloak account.
         """
         if not email:
             raise missing_field("X-Customer-Email")
@@ -78,12 +89,76 @@ class CustomerRepository(BaseRepository[CustomerDB]):
         if not last_name:
             raise missing_field("X-Customer-Last-Name")
 
+        # e-mail is unique, so a second Keycloak account using an address that
+        # already has a profile would otherwise fail as a 500 on the constraint.
+        # Report it as a conflict instead. Deliberately not re-linking the old
+        # profile to the new subject: without verified ownership that would be
+        # an account-takeover path.
+        clash = await self.get_by(email=email)
+        if clash is not None and clash.keycloak_user_id != keycloak_user_id:
+            logger.warning(
+                "Refusing to create a second profile for an existing e-mail",
+                extra={
+                    "email": email,
+                    "existing_customer_id": str(clash.id),
+                    "incoming_keycloak_user_id": keycloak_user_id,
+                },
+            )
+            raise duplicate_entry(
+                "Customer",
+                "email",
+                email,
+                message=(
+                    f"A customer profile already exists for '{email}' under a "
+                    "different Keycloak account. Sign in with the original "
+                    "account, or have an administrator merge the profiles."
+                ),
+            )
+
         return await self.create(
             keycloak_user_id=keycloak_user_id,
             email=email,
             first_name=first_name,
             last_name=last_name,
+            phone=phone,
         )
+
+    async def sync_from_claims(
+        self,
+        customer: CustomerDB,
+        email: str | None,
+        phone: str | None,
+    ) -> CustomerDB:
+        """
+        Refresh the fields Keycloak owns onto an existing profile.
+
+        Keycloak is the source of truth for e-mail and phone, so a customer who
+        changes either in their account should not have to re-enter it here.
+        Writes only when something actually differs, to avoid a pointless
+        UPDATE on every request.
+
+        Args:
+            customer: The existing profile.
+            email:    Verified e-mail from the token, or None.
+            phone:    phone_number claim, or None.
+
+        Returns:
+            The profile, updated in place when the claims had drifted.
+        """
+        changes: dict[str, str] = {}
+        if email and email != customer.email:
+            changes["email"] = email
+        if phone and phone != customer.phone:
+            changes["phone"] = phone
+
+        if not changes:
+            return customer
+
+        logger.info(
+            "Syncing customer profile from Keycloak claims",
+            extra={"customer_id": str(customer.id), "fields": sorted(changes)},
+        )
+        return await self.update(customer.id, **changes)
 
     async def update_customer(
         self,

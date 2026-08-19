@@ -78,6 +78,7 @@ async def get_my_profile(
             email=claims.email,
             first_name=claims.first_name,
             last_name=claims.last_name,
+            phone=claims.phone,
         )
         # Commit before responding. get_session_dependency also commits, but
         # its exit code runs after the response is sent, so a client reading
@@ -87,6 +88,13 @@ async def get_my_profile(
             "New customer profile created",
             extra={"customer_id": str(customer.id)},
         )
+    else:
+        # Keycloak owns e-mail and phone, so pick up any change the customer
+        # made in their account rather than serving a stale copy.
+        synced = await repo.sync_from_claims(customer, claims.email, claims.phone)
+        if synced is not customer:
+            await session.commit()
+            customer = synced
     return CustomerResponse.model_validate(customer)
 
 

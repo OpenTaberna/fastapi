@@ -9,6 +9,7 @@ services:
     environment:
       REDIS_URL: redis://opentaberna-redis:6379/0
       KEYCLOAK_URL: http://opentaberna-keycloak:8080
+      KEYCLOAK_PUBLIC_URL: http://localhost:8080
       STORAGE_ENDPOINT_URL: http://opentaberna-minio:9000
     ports:
       - "8000:8000"
@@ -68,18 +69,34 @@ services:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_HTTP_PORT: 8080
+      # Exposes /health on the management port (9000). Without this the
+      # healthcheck below has nothing to probe.
+      KC_HEALTH_ENABLED: "true"
     volumes:
+      # Named volume so registered users, their attributes and role grants
+      # survive a container recreate. Without it Keycloak's dev H2 database
+      # lives only inside the container, every user is regenerated with a new
+      # sub, and profiles already linked to the old sub break.
+      - keycloak_data:/opt/keycloak/data
       - ./keycloak:/opt/keycloak/data/import:ro
     ports:
       - "8080:8080"
     restart: unless-stopped
     container_name: opentaberna-keycloak
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health/ready || exit 1"]
+      # The Keycloak image ships neither curl nor wget, so the previous
+      # curl-based check could never pass and the container sat "unhealthy"
+      # even when serving fine. bash is present, so use its /dev/tcp support
+      # against the management port.
+      test:
+        [
+          "CMD-SHELL",
+          "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 && grep -q '\"UP\"' <&3",
+        ]
       interval: 30s
       timeout: 10s
       retries: 10
-      start_period: 40s
+      start_period: 60s
 
   opentaberna-minio:
     image: minio/minio:latest
@@ -126,3 +143,6 @@ services:
         condition: service_healthy
       opentaberna-minio:
         condition: service_healthy
+
+volumes:
+  keycloak_data:

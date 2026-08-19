@@ -113,6 +113,39 @@ class Settings(BaseSettings):
     keycloak_client_secret: str = Field(
         default="", description="Keycloak client secret"
     )
+    keycloak_public_url: str = Field(
+        default="",
+        description=(
+            "Base URL that appears in the token's iss claim. Inside Docker the API "
+            "reaches Keycloak on the compose network while browsers use localhost, so "
+            "the two differ and issuer validation needs the public one. "
+            "Empty falls back to keycloak_url."
+        ),
+    )
+    keycloak_admin_client_ids: list[str] = Field(
+        default=["opentaberna-admin-ui"],
+        description=(
+            "Clients whose tokens may reach admin endpoints. Checked against the "
+            "token's azp so an admin logged into the storefront cannot drive "
+            "back-office endpoints from it."
+        ),
+    )
+    keycloak_admin_role: str = Field(
+        default="admin",
+        description="Realm role required for admin endpoints",
+    )
+    keycloak_jwks_cache_seconds: int = Field(
+        default=300,
+        description="How long the signing keys are cached before being refetched",
+    )
+    auth_allow_dev_headers: bool = Field(
+        default=True,
+        description=(
+            "Accept the X-Admin-Key / X-Keycloak-User-ID development shims when no "
+            "bearer token is present. Forced off in production by a validator - "
+            "those headers are trivially forged."
+        ),
+    )
 
     # CORS
     cors_origins: list[str] = Field(default=["*"], description="Allowed CORS origins")
@@ -251,6 +284,22 @@ class Settings(BaseSettings):
             "before marking it FAILED for manual review"
         ),
     )
+
+    @field_validator("auth_allow_dev_headers")
+    @classmethod
+    def disable_dev_headers_in_production(cls, v: bool, info: Any) -> bool:
+        """
+        Refuse to honour the forgeable auth headers in production.
+
+        X-Admin-Key and X-Keycloak-User-ID let any caller claim any identity.
+        They exist so local development and the test suite do not need a live
+        Keycloak; leaving them enabled in production would make every admin
+        endpoint publicly writable.
+        """
+        env = info.data.get("environment", Environment.DEVELOPMENT)
+        if env == Environment.PRODUCTION:
+            return False
+        return v
 
     @field_validator("secret_key")
     @classmethod
