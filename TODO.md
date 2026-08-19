@@ -4,8 +4,8 @@ Ordered by dependency. Each phase builds on the previous.
 CRUD for items (`crud-item-store`) is handled by a partner and not listed here.
 
 **Status:** Phases 0–4 are complete and merged, apart from 4.3 (refunds) and 4.6
-(Alembic). Auth is the one cross-cutting gap: every protected route still uses a
-development header shim rather than Keycloak — see the Auth section below.
+(Alembic). Keycloak now backs user management and protects the admin endpoints —
+see `docs/authorization.md`.
 
 ---
 
@@ -214,17 +214,32 @@ introducing Alembic is a real outstanding task, tracked in Phase 4.
 
 ---
 
-## Auth — the current gap
+## Auth — Keycloak ✅
 
-Every protected route uses a development header shim. This is the single largest piece of
-outstanding work, and it is deliberately isolated so the swap touches few files.
+> Realm managed in this repo at `keycloak/opentaberna-realm.json`.
+> Full detail in `docs/authorization.md`.
 
-- [ ] Replace `X-Keycloak-User-ID` with a validated JWT — `services/customers/dependencies.py`
-      (`get_keycloak_id`, `get_creation_claims`). Tracked in #16.
-- [ ] Replace `X-Admin-Key` with a Keycloak `role=admin` check — `services/admin/dependencies.py`
-      (`require_admin`, now shared by the admin and inventory services).
-- [ ] Rework `authorize/keycloak.py`: it reads `os.getenv` directly rather than
-      `shared/config`, and nothing imports it. Both shims should end up there.
+- [x] Realm roles `customer` (default for every account) and `admin`
+- [x] `admin` is composite, carrying the `realm-management` roles needed to read
+      and assign roles — so an admin can promote another user and a customer
+      cannot. Verified: a customer gets 403 from Keycloak on both
+- [x] Separate clients: `opentaberna-api` (resource server),
+      `opentaberna-admin-ui`, `opentaberna-store-ui`
+- [x] Self-registration enabled; new accounts receive `customer` automatically
+- [x] Optional `phone` attribute on the user profile, mapped into the token as
+      `phone_number`
+- [x] Bearer tokens validated on signature, issuer, audience and expiry against
+      the realm JWKS, with the keys cached and refreshed
+- [x] Admin endpoints require the `admin` role **and** a token from an admin
+      client, so an administrator's storefront token is refused
+- [x] Customer endpoints take identity from a verified token when one is sent; a
+      forged `X-Keycloak-User-ID` cannot override it
+- [x] Catalogue, health and webhook endpoints stay public
+- [x] Dev header shims retained for local work, forced off in production
+- [x] Keycloak data persisted so registered users survive a container restart
+- [ ] Verify e-mail on registration before trusting it for order correspondence
+- [ ] Move the storefront to the authorization-code + PKCE flow (the direct
+      grant is enabled for development convenience)
 
 ---
 

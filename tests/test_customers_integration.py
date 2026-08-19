@@ -211,9 +211,12 @@ class TestGetMyProfile:
 
         _psql(f"DELETE FROM customers WHERE id = '{body['id']}';")
 
-    def test_missing_keycloak_id_header_returns_422(self):
+    def test_missing_keycloak_id_header_returns_403(self):
+        # Identity is now resolved by app.authorize: with no bearer token and
+        # no dev header there is no caller to act as, which is an authorization
+        # failure rather than a malformed request.
         resp = requests.get(f"{CUSTOMERS_URL}/me")
-        assert resp.status_code == 422
+        assert resp.status_code == 403
 
     def test_missing_creation_headers_for_new_user_returns_422(self):
         kc_id = _unique_kc_id(prefix="kc-nocreate")
@@ -306,9 +309,12 @@ class TestUpdateMyProfile:
         )
         assert resp.status_code == 422
 
-    def test_missing_keycloak_header_returns_422(self):
+    def test_missing_keycloak_header_returns_403(self):
+        # Identity is now resolved by app.authorize: with no bearer token and
+        # no dev header there is no caller to act as, which is an authorization
+        # failure rather than a malformed request.
         resp = requests.patch(f"{CUSTOMERS_URL}/me", json={"first_name": "X"})
-        assert resp.status_code == 422
+        assert resp.status_code == 403
 
 
 # ---------------------------------------------------------------------------
@@ -344,9 +350,12 @@ class TestListMyAddresses:
         )
         assert resp.status_code == 404
 
-    def test_missing_keycloak_header_returns_422(self):
+    def test_missing_keycloak_header_returns_403(self):
+        # Identity is now resolved by app.authorize: with no bearer token and
+        # no dev header there is no caller to act as, which is an authorization
+        # failure rather than a malformed request.
         resp = requests.get(f"{CUSTOMERS_URL}/me/addresses")
-        assert resp.status_code == 422
+        assert resp.status_code == 403
 
 
 # ---------------------------------------------------------------------------

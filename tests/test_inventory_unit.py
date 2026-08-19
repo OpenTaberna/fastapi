@@ -216,14 +216,20 @@ class TestInventoryItemResponse:
 
 
 class TestRequireAdmin:
-    """require_admin must raise an exception when X-Admin-Key is absent."""
+    """
+    require_admin must refuse a caller with no credentials.
+
+    Inventory now uses the shared dependency from app.authorize, so these
+    exercise the development-header path; the Keycloak token paths are covered
+    in test_authorize_unit.py.
+    """
 
     @pytest.mark.asyncio
     async def test_missing_header_raises(self):
         from app.services.inventory.routers.inventory_router import require_admin
 
         with pytest.raises(Exception) as exc_info:
-            await require_admin(x_admin_key=None)
+            await require_admin(principal=None, x_admin_key=None)
 
         exc = exc_info.value
         assert isinstance(exc, AuthorizationError)
@@ -234,9 +240,9 @@ class TestRequireAdmin:
         from app.services.inventory.routers.inventory_router import require_admin
 
         # Should not raise for any truthy value
-        await require_admin(x_admin_key="dev")
-        await require_admin(x_admin_key="any-string")
-        await require_admin(x_admin_key="supersecretkey")
+        await require_admin(principal=None, x_admin_key="dev")
+        await require_admin(principal=None, x_admin_key="any-string")
+        await require_admin(principal=None, x_admin_key="supersecretkey")
 
     @pytest.mark.asyncio
     async def test_empty_string_raises(self):
@@ -244,7 +250,7 @@ class TestRequireAdmin:
         from app.services.inventory.routers.inventory_router import require_admin
 
         with pytest.raises(AuthorizationError) as exc_info:
-            await require_admin(x_admin_key=None)
+            await require_admin(principal=None, x_admin_key=None)
 
         assert exc_info.value.category == ErrorCategory.AUTHORIZATION
 

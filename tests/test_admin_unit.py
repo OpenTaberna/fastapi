@@ -97,6 +97,7 @@ def _make_customer(email: str = "customer@example.com") -> MagicMock:
     c.email = email
     c.first_name = "Jane"
     c.last_name = "Doe"
+    c.phone = None
     c.created_at = now
     c.updated_at = now
     return c

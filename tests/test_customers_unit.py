@@ -65,6 +65,7 @@ def _make_customer(
     c.email = email
     c.first_name = first_name
     c.last_name = last_name
+    c.phone = None
     c.created_at = now
     c.updated_at = now
     return c
@@ -286,6 +287,10 @@ class TestCustomerRepository:
     @pytest.fixture
     def repo(self, session):
         r = CustomerRepository(session)
+        # create_from_claims looks for an existing profile with the same
+        # e-mail before inserting; default to "no clash" and let the tests
+        # that care override it.
+        r.get_by = AsyncMock(return_value=None)
         return r
 
     # --- get_by_keycloak_id_or_404 ---
@@ -327,6 +332,7 @@ class TestCustomerRepository:
             email="new@example.com",
             first_name="New",
             last_name="User",
+            phone=None,
         )
 
     @pytest.mark.asyncio
@@ -389,6 +395,41 @@ class TestCustomerRepository:
 
         assert "X-Customer-Last-Name" in exc_info.value.message
         repo.create.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_create_from_claims_rejects_a_taken_email(self, repo):
+        # A second Keycloak account using an address that already has a profile
+        # must be reported as a conflict, not crash on the unique constraint.
+        taken = _make_customer()
+        taken.keycloak_user_id = "kc-original"
+        repo.get_by = AsyncMock(return_value=taken)
+        repo.create = AsyncMock()
+
+        with pytest.raises(ValidationError):
+            await repo.create_from_claims(
+                keycloak_user_id="kc-different",
+                email=taken.email,
+                first_name="New",
+                last_name="User",
+            )
+
+        repo.create.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_create_from_claims_allows_the_same_subject_again(self, repo):
+        # Same person, same Keycloak account - not a clash.
+        same = _make_customer()
+        same.keycloak_user_id = "kc-same"
+        repo.get_by = AsyncMock(return_value=same)
+        repo.create = AsyncMock(return_value=same)
+
+        result = await repo.create_from_claims(
+            keycloak_user_id="kc-same",
+            email=same.email,
+            first_name="New",
+            last_name="User",
+        )
+        assert result is same
 
     @pytest.mark.asyncio
     async def test_create_from_claims_rejects_empty_string_claims(self, repo):
@@ -599,27 +640,34 @@ class TestCustomerDependencies:
 
     @pytest.mark.asyncio
     async def test_get_keycloak_id_returns_subject_claim(self):
-        assert await get_keycloak_id(x_keycloak_user_id="kc-123") == "kc-123"
+        got = await get_keycloak_id(principal=None, x_keycloak_user_id="kc-123")
+        assert got == "kc-123"
 
     @pytest.mark.asyncio
     async def test_get_creation_claims_collects_all_headers(self):
         claims = await get_creation_claims(
+            principal=None,
             x_customer_email="a@b.c",
             x_customer_first_name="Jane",
             x_customer_last_name="Doe",
+            x_customer_phone=None,
         )
         assert claims == CreationClaims(
-            email="a@b.c", first_name="Jane", last_name="Doe"
+            email="a@b.c", first_name="Jane", last_name="Doe", phone=None
         )
 
     @pytest.mark.asyncio
     async def test_get_creation_claims_passes_absent_headers_through_as_none(self):
         claims = await get_creation_claims(
+            principal=None,
             x_customer_email=None,
             x_customer_first_name=None,
             x_customer_last_name=None,
+            x_customer_phone=None,
         )
-        assert claims == CreationClaims(email=None, first_name=None, last_name=None)
+        assert claims == CreationClaims(
+            email=None, first_name=None, last_name=None, phone=None
+        )
 
     def test_get_creation_claims_headers_are_optional(self):
         # FastAPI resolves these defaults per request; assert the signature
@@ -638,9 +686,11 @@ class TestCustomerDependencies:
     async def test_get_creation_claims_does_not_validate(self):
         # Validation is the service layer's job — the dependency only collects.
         claims = await get_creation_claims(
+            principal=None,
             x_customer_email="only@email.com",
             x_customer_first_name=None,
             x_customer_last_name=None,
+            x_customer_phone=None,
         )
         assert claims.email == "only@email.com"
         assert claims.first_name is None
