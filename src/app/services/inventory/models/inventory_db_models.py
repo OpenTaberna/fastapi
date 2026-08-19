@@ -126,7 +126,7 @@ class StockReservationDB(Base, TimestampMixin):
 
     inventory_item_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("inventory_items.id", ondelete="RESTRICT"),
+        ForeignKey("inventory_items.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
         doc="FK to the inventory item being reserved",

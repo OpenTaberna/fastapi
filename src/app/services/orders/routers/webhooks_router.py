@@ -179,6 +179,7 @@ async def stripe_webhook(
     # 6. Record event in inbox (idempotency guard for future duplicates)
     # ------------------------------------------------------------------
     await _record_webhook_event(session, webhook_repo, event_id, event.raw_payload)
+    await session.commit()
 
     return {"received": True}
 
