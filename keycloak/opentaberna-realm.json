@@ -128,11 +128,13 @@
       "serviceAccountsEnabled": false,
       "redirectUris": [
         "http://localhost:4200/*",
-        "http://localhost:8081/*"
+        "http://localhost:8081/*",
+        "http://localhost:8000/docs/oauth2-redirect"
       ],
       "webOrigins": [
         "http://localhost:4200",
-        "http://localhost:8081"
+        "http://localhost:8081",
+        "http://localhost:8000"
       ],
       "attributes": {
         "pkce.code.challenge.method": "S256",

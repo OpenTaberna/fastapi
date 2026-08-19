@@ -5,9 +5,9 @@ Keycloak-backed authentication and the dependencies routes use to enforce it.
 """
 
 from .dependencies import (
-    bearer_token,
     get_keycloak_id,
     get_optional_principal,
+    oauth2_scheme,
     require_admin,
     require_principal,
 )
@@ -26,7 +26,7 @@ __all__ = [
     "Principal",
     "TokenError",
     "authenticate",
-    "bearer_token",
+    "oauth2_scheme",
     "decode_token",
     "get_keycloak_id",
     "get_optional_principal",

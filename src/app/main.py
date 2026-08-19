@@ -20,11 +20,24 @@ from app.shared.logger import get_logger
 from app.shared.middleware import CorrelationIDMiddleware
 from app.shared.rate_limit import limiter
 from app.shared.responses import ErrorResponse, ValidationErrorResponse
+from app.shared.config import get_settings
 
 logger = get_logger(__name__)
 
 
-app = FastAPI(title="OpenTaberna API", lifespan=lifespan)
+_settings = get_settings()
+
+app = FastAPI(
+    title="OpenTaberna API",
+    lifespan=lifespan,
+    # Lets the documentation page complete a real Keycloak login, so the
+    # padlocked operations can be tried out rather than only looked at.
+    swagger_ui_init_oauth={
+        "clientId": _settings.keycloak_docs_client_id,
+        "usePkceWithAuthorizationCodeGrant": True,
+        "scopes": "openid profile email",
+    },
+)
 app.state.limiter = limiter
 
 
