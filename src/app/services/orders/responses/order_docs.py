@@ -97,6 +97,17 @@ ORDER_INSUFFICIENT_STOCK_EXAMPLE = _err(
     },
 )
 
+CUSTOMER_NOT_FOUND_EXAMPLE = _err(
+    status=404,
+    code="entity_not_found",
+    category="not_found",
+    message="Customer with ID '48765ab4-e8a8-4584-92e2-4d5d3e607f44' not found",
+    details={
+        "entity_type": "Customer",
+        "entity_id": "48765ab4-e8a8-4584-92e2-4d5d3e607f44",
+    },
+)
+
 ITEM_NOT_FOUND_EXAMPLE = _err(
     status=404,
     code="entity_not_found",
@@ -176,8 +187,21 @@ CREATE_ORDER_RESPONSES: dict = {
         "content": {"application/json": {"example": ITEM_NO_PRICE_EXAMPLE}},
     },
     404: {
-        "description": "Requested SKU not found in the item catalogue",
-        "content": {"application/json": {"example": ITEM_NOT_FOUND_EXAMPLE}},
+        "description": "Requested SKU not found in the item catalogue, or customer does not exist",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "sku_not_found": {
+                        "summary": "SKU not found",
+                        "value": ITEM_NOT_FOUND_EXAMPLE,
+                    },
+                    "customer_not_found": {
+                        "summary": "Customer not found",
+                        "value": CUSTOMER_NOT_FOUND_EXAMPLE,
+                    },
+                }
+            }
+        },
     },
     **_422,
     **_500,
