@@ -5,7 +5,10 @@ These tests run against the actual running API and database.
 Make sure Docker containers are running before executing these tests.
 """
 
+import struct
 import uuid
+import zlib
+
 import pytest
 import requests
 
@@ -246,3 +249,122 @@ class TestValidation:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ---------------------------------------------------------------------------
+# Product images — PUT/GET /v1/items/{uuid}/image
+# ---------------------------------------------------------------------------
+
+
+def _png_bytes(width: int = 8, height: int = 8) -> bytes:
+    """Build a tiny valid PNG without pulling in an image library."""
+
+    def chunk(kind: bytes, payload: bytes) -> bytes:
+        body = kind + payload
+        return (
+            struct.pack(">I", len(payload))
+            + body
+            + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+        )
+
+    raw = b"".join(b"\x00" + bytes((178, 74, 44)) * width for _ in range(height))
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(raw))
+        + chunk(b"IEND", b"")
+    )
+
+
+_ADMIN = {"X-Admin-Key": "dev"}
+
+
+@pytest.mark.integration
+class TestItemImage:
+    """Uploading and serving the product image shown in the storefront."""
+
+    def test_upload_returns_200_and_sets_main_image(self, created_item):
+        image = _png_bytes()
+        response = requests.put(
+            f"{API_BASE_URL}/{created_item['uuid']}/image",
+            files={"file": ("p.png", image, "image/png")},
+            headers=_ADMIN,
+        )
+        assert response.status_code == 200
+        assert response.json()["media"]["main_image"].endswith("/image")
+
+    def test_uploaded_image_is_served_back_unchanged(self, created_item):
+        image = _png_bytes()
+        requests.put(
+            f"{API_BASE_URL}/{created_item['uuid']}/image",
+            files={"file": ("p.png", image, "image/png")},
+            headers=_ADMIN,
+        )
+        got = requests.get(f"{API_BASE_URL}/{created_item['uuid']}/image")
+        assert got.status_code == 200
+        assert got.content == image
+        assert got.headers["content-type"] == "image/png"
+
+    def test_image_is_public(self, created_item):
+        # The storefront shows it to shoppers who are not signed in.
+        requests.put(
+            f"{API_BASE_URL}/{created_item['uuid']}/image",
+            files={"file": ("p.png", _png_bytes(), "image/png")},
+            headers=_ADMIN,
+        )
+        assert (
+            requests.get(f"{API_BASE_URL}/{created_item['uuid']}/image").status_code
+            == 200
+        )
+
+    def test_upload_without_credentials_returns_403(self, created_item):
+        response = requests.put(
+            f"{API_BASE_URL}/{created_item['uuid']}/image",
+            files={"file": ("p.png", _png_bytes(), "image/png")},
+        )
+        assert response.status_code == 403
+
+    def test_non_image_content_is_rejected(self, created_item):
+        # Declared image/png, but the bytes are a script.
+        response = requests.put(
+            f"{API_BASE_URL}/{created_item['uuid']}/image",
+            files={"file": ("evil.png", b"<?php echo 1; ?>", "image/png")},
+            headers=_ADMIN,
+        )
+        assert response.status_code == 400
+
+    def test_oversized_image_is_rejected(self, created_item):
+        oversized = b"\x89PNG\r\n\x1a\n" + b"\x00" * (6 * 1024 * 1024)
+        response = requests.put(
+            f"{API_BASE_URL}/{created_item['uuid']}/image",
+            files={"file": ("big.png", oversized, "image/png")},
+            headers=_ADMIN,
+        )
+        assert response.status_code == 400
+
+    def test_unknown_item_returns_404(self):
+        response = requests.put(
+            f"{API_BASE_URL}/{uuid.uuid4()}/image",
+            files={"file": ("p.png", _png_bytes(), "image/png")},
+            headers=_ADMIN,
+        )
+        assert response.status_code == 404
+
+    def test_item_without_an_image_returns_404(self, created_item):
+        assert (
+            requests.get(f"{API_BASE_URL}/{created_item['uuid']}/image").status_code
+            == 404
+        )
+
+    def test_reupload_replaces_rather_than_accumulating(self, created_item):
+        first, second = _png_bytes(8, 8), _png_bytes(16, 16)
+        for image in (first, second):
+            requests.put(
+                f"{API_BASE_URL}/{created_item['uuid']}/image",
+                files={"file": ("p.png", image, "image/png")},
+                headers=_ADMIN,
+            )
+        assert (
+            requests.get(f"{API_BASE_URL}/{created_item['uuid']}/image").content
+            == second
+        )

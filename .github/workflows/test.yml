@@ -70,15 +70,15 @@ jobs:
       - name: 🔧 Install system tools
         run: sudo apt-get install -y postgresql-client redis-tools
 
-      - name: 🐳 Start services (DB, Redis, Keycloak)
+      - name: 🐳 Start services (DB, Redis, Keycloak, MinIO)
         run: |
-          mkdir -p postgres_data redis_data
-          docker compose -f docker-compose.dev.yml up opentaberna-db opentaberna-redis opentaberna-keycloak -d
+          mkdir -p postgres_data redis_data minio_data
+          docker compose -f docker-compose.dev.yml up opentaberna-db opentaberna-redis opentaberna-keycloak opentaberna-minio -d
           echo "✅ Services started"
 
       - name: 🗄️ Wait for backing services
         run: |
-          echo "⏳ Waiting for DB, Redis and Keycloak..."
+          echo "⏳ Waiting for DB, Redis, Keycloak and MinIO..."
 
           for i in {1..40}; do
             echo "Attempt $i/40..."
@@ -86,8 +86,11 @@ jobs:
             pg_isready -h localhost -p 5432 -U opentaberna 2>/dev/null && PG_READY=1 && echo "✅ Postgres ready"
             redis-cli -h localhost -p 6379 ping 2>/dev/null | grep -q PONG && REDIS_READY=1 && echo "✅ Redis ready"
             curl -sf http://localhost:8080/realms/opentaberna/.well-known/openid-configuration > /dev/null 2>&1 && KC_READY=1 && echo "✅ Keycloak ready"
+            # MinIO backs the product-image endpoints; without it those tests
+            # fail with a storage error rather than anything meaningful.
+            curl -sf http://localhost:9000/minio/health/live > /dev/null 2>&1 && MINIO_READY=1 && echo "✅ MinIO ready"
 
-            [ "$PG_READY" = "1" ] && [ "$REDIS_READY" = "1" ] && [ "$KC_READY" = "1" ] && echo "✅ All backing services ready!" && exit 0
+            [ "$PG_READY" = "1" ] && [ "$REDIS_READY" = "1" ] && [ "$KC_READY" = "1" ] && [ "$MINIO_READY" = "1" ] && echo "✅ All backing services ready!" && exit 0
 
             sleep 5
           done

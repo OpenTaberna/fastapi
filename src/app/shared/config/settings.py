@@ -229,6 +229,17 @@ class Settings(BaseSettings):
         default="opentaberna_secret",
         description="Storage secret access key (MinIO root password or AWS secret key)",
     )
+    storage_bucket_items: str = Field(
+        default="item-images",
+        description="Bucket holding product images shown in the storefront",
+    )
+    storage_max_image_bytes: int = Field(
+        default=5 * 1024 * 1024,
+        description=(
+            "Largest product image accepted, in bytes. Guards the object store "
+            "against a single oversized upload filling it."
+        ),
+    )
     storage_bucket_labels: str = Field(
         default="shipping-labels",
         description="Bucket name where carrier label files (PDF/ZPL) are stored",
