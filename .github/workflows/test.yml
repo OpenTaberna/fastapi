@@ -236,7 +236,7 @@ jobs:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
 
-      - name: � Set up Python
+      - name: 🐍 Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -288,34 +288,39 @@ jobs:
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
 
-      - name: �🔒 Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+      - name: 🔒 Run Trivy vulnerability scanner (table)
+        # The action ships its own Trivy binary. Do not install Trivy from apt:
+        # apt-get update stalls indefinitely when the runner's Ubuntu mirror is
+        # unreachable, which silently burns the job timeout (see issue #22).
+        uses: aquasecurity/trivy-action@v0.36.0
+        timeout-minutes: 5
         with:
           scan-type: 'fs'
           scan-ref: '.'
           format: 'table'
+          output: 'trivy-results.txt'
           exit-code: '0'
           severity: 'CRITICAL,HIGH,MEDIUM'
-          # Scan Python dependencies and filesystem
           scanners: 'vuln,secret,config'
         continue-on-error: true
 
-      - name: 📊 Generate detailed Trivy report
-        if: always()
-        run: |
-          # Install trivy if not available
-          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
-          echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
-          sudo apt-get update
-          sudo apt-get install trivy -y
-          
-          # Run detailed scan
-          trivy fs --severity CRITICAL,HIGH,MEDIUM --format json --output trivy-results.json .
-          trivy fs --severity CRITICAL,HIGH,MEDIUM --format table --output trivy-results.txt .
-          
-          echo "✅ Detailed scan completed"
+      - name: 🔒 Run Trivy vulnerability scanner (json)
+        # Second pass for the machine-readable report. The vulnerability DB is
+        # already in the runner cache from the step above, so this is cheap.
+        uses: aquasecurity/trivy-action@v0.36.0
+        timeout-minutes: 5
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'json'
+          output: 'trivy-results.json'
+          exit-code: '0'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          scanners: 'vuln,secret,config'
+          skip-setup-trivy: true
+        continue-on-error: true
 
-      - name: � Display scan results in summary
+      - name: 📊 Display scan results in summary
         if: always()
         run: |
           echo "## 🔒 Security Scan Results" >> $GITHUB_STEP_SUMMARY
