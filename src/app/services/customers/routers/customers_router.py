@@ -11,20 +11,21 @@ FastAPI router for customer profile and address endpoints (Phase 0/1):
     DELETE /customers/me/addresses/{id}     — Delete an address
 """
 
-from dataclasses import dataclass
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.shared.database.session import get_session_dependency
-from app.shared.exceptions import missing_field
 from app.shared.logger import get_logger
 
+from ..dependencies import get_creation_headers
+from ..functions import build_customer_create
 from ..models import (
     AddressCreate,
     AddressResponse,
     AddressUpdate,
+    CustomerCreationHeaders,
     CustomerResponse,
     CustomerUpdate,
 )
@@ -63,45 +64,6 @@ async def _get_keycloak_id(
 
 
 # ---------------------------------------------------------------------------
-# Creation headers dependency
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class _CreationHeaders:
-    """Optional headers only needed when auto-creating a profile via GET /me."""
-
-    email: str | None
-    first_name: str | None
-    last_name: str | None
-
-
-async def _get_creation_headers(
-    x_customer_email: str | None = Header(
-        default=None,
-        alias="X-Customer-Email",
-        description="[Dev-only] Required only on first call (profile creation). Customer email address.",
-    ),
-    x_customer_first_name: str | None = Header(
-        default=None,
-        alias="X-Customer-First-Name",
-        description="[Dev-only] Required only on first call (profile creation). Customer given name.",
-    ),
-    x_customer_last_name: str | None = Header(
-        default=None,
-        alias="X-Customer-Last-Name",
-        description="[Dev-only] Required only on first call (profile creation). Customer family name.",
-    ),
-) -> _CreationHeaders:
-    """Collect optional profile-creation headers — validation is deferred to the handler."""
-    return _CreationHeaders(
-        email=x_customer_email,
-        first_name=x_customer_first_name,
-        last_name=x_customer_last_name,
-    )
-
-
-# ---------------------------------------------------------------------------
 # GET /me — Get own profile (auto-create on first call)
 # ---------------------------------------------------------------------------
 
@@ -119,26 +81,19 @@ async def _get_creation_headers(
 )
 async def get_my_profile(
     keycloak_user_id: str = Depends(_get_keycloak_id),
-    creation: _CreationHeaders = Depends(_get_creation_headers),
+    creation_headers: CustomerCreationHeaders = Depends(get_creation_headers),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> CustomerResponse:
     repo = get_customer_repository(session)
     customer = await repo.get_by_keycloak_id(keycloak_user_id)
     if customer is not None:
         return CustomerResponse.model_validate(customer)
-    # Profile does not exist yet — all creation fields are required.
-    if not creation.email:
-        raise missing_field("X-Customer-Email")
-    if not creation.first_name:
-        raise missing_field("X-Customer-First-Name")
-    if not creation.last_name:
-        raise missing_field("X-Customer-Last-Name")
-    customer = await repo.create(
-        keycloak_user_id=keycloak_user_id,
-        email=creation.email,
-        first_name=creation.first_name,
-        last_name=creation.last_name,
+
+    creation = build_customer_create(
+        keycloak_user_id,
+        creation_headers,
     )
+    customer = await repo.create_customer(creation)
     await session.commit()
     await session.refresh(customer)
     logger.info("New customer profile created", extra={"customer_id": str(customer.id)})

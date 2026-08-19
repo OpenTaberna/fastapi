@@ -3,11 +3,12 @@ Unit tests for the Customers service — pure business logic, no DB, no network.
 
 Covers:
     - CustomerBase / CustomerCreate / CustomerUpdate — Pydantic input validation
+    - build_customer_create                          — first-login header validation
     - AddressBase / AddressCreate / AddressUpdate    — Pydantic input validation
     - CustomerResponse                              — from_attributes round-trip via MagicMock
     - AddressResponse                               — from_attributes round-trip via MagicMock
     - CustomerRepository.get_by_keycloak_id_or_404 — found, not found (404)
-    - CustomerRepository.get_or_create              — returns existing / creates new / missing fields (422)
+    - CustomerRepository get/create operations       — deterministic database operations
     - CustomerRepository.update_customer            — empty payload, partial payload, update returns None (404)
     - AddressRepository._clear_default              — issues correct UPDATE via session
     - AddressRepository.create_address              — clears default when is_default=True
@@ -20,11 +21,19 @@ from datetime import datetime, UTC
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
-from app.shared.exceptions.errors import AuthorizationError, NotFoundError, ValidationError
+from app.shared.exceptions.errors import (
+    AuthorizationError,
+    NotFoundError,
+    ValidationError,
+)
+from app.services.customers.dependencies import get_creation_headers
+from app.services.customers.functions import build_customer_create
 from app.services.customers.models import (
     AddressCreate,
     AddressResponse,
     AddressUpdate,
+    CustomerCreate,
+    CustomerCreationHeaders,
     CustomerResponse,
     CustomerUpdate,
 )
@@ -137,6 +146,59 @@ class TestCustomerBase:
                 first_name="Anna",
                 last_name="Müller",
             )
+
+
+# ---------------------------------------------------------------------------
+# Customer creation — business validation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_creation_headers_returns_creation_model():
+    result = await get_creation_headers("new@example.com", "New", "User")
+
+    assert result == CustomerCreationHeaders("new@example.com", "New", "User")
+
+
+class TestBuildCustomerCreate:
+    def test_builds_validated_customer_data(self):
+        result = build_customer_create(
+            "kc-new",
+            CustomerCreationHeaders(
+                email="new@example.com",
+                first_name="New",
+                last_name="User",
+            ),
+        )
+
+        assert result.keycloak_user_id == "kc-new"
+        assert result.email == "new@example.com"
+        assert result.first_name == "New"
+        assert result.last_name == "User"
+
+    @pytest.mark.parametrize(
+        ("headers", "missing_header"),
+        [
+            (CustomerCreationHeaders(None, "New", "User"), "X-Customer-Email"),
+            (
+                CustomerCreationHeaders("new@example.com", None, "User"),
+                "X-Customer-First-Name",
+            ),
+            (
+                CustomerCreationHeaders("new@example.com", "New", None),
+                "X-Customer-Last-Name",
+            ),
+        ],
+    )
+    def test_raises_422_when_creation_header_is_missing(
+        self,
+        headers: CustomerCreationHeaders,
+        missing_header: str,
+    ):
+        with pytest.raises(ValidationError) as exc_info:
+            build_customer_create("kc-new", headers)
+
+        assert missing_header in exc_info.value.message
 
 
 # ---------------------------------------------------------------------------
@@ -300,34 +362,28 @@ class TestCustomerRepository:
         assert "kc-ghost" in exc_info.value.message
 
     @pytest.mark.asyncio
-    async def test_get_or_create_returns_existing(self, repo):
+    async def test_get_by_keycloak_id_returns_customer(self, repo):
         existing = _make_customer()
-        repo.get_by_keycloak_id = AsyncMock(return_value=existing)
+        repo.get_by = AsyncMock(return_value=existing)
 
-        customer, created = await repo.get_or_create(
-            keycloak_user_id="kc-001",
-            email="x@example.com",
-            first_name="X",
-            last_name="Y",
-        )
+        customer = await repo.get_by_keycloak_id("kc-001")
 
-        assert created is False
         assert customer is existing
+        repo.get_by.assert_awaited_once_with(keycloak_user_id="kc-001")
 
     @pytest.mark.asyncio
-    async def test_get_or_create_creates_new(self, repo):
+    async def test_create_customer_creates_new(self, repo):
         new_customer = _make_customer()
-        repo.get_by_keycloak_id = AsyncMock(return_value=None)
         repo.create = AsyncMock(return_value=new_customer)
-
-        customer, created = await repo.get_or_create(
+        payload = CustomerCreate(
             keycloak_user_id="kc-new",
             email="new@example.com",
             first_name="New",
             last_name="User",
         )
 
-        assert created is True
+        customer = await repo.create_customer(payload)
+
         assert customer is new_customer
         repo.create.assert_awaited_once_with(
             keycloak_user_id="kc-new",
@@ -335,48 +391,6 @@ class TestCustomerRepository:
             first_name="New",
             last_name="User",
         )
-
-    @pytest.mark.asyncio
-    async def test_get_or_create_raises_422_when_email_missing(self, repo):
-        repo.get_by_keycloak_id = AsyncMock(return_value=None)
-
-        with pytest.raises(ValidationError) as exc_info:
-            await repo.get_or_create(
-                keycloak_user_id="kc-new",
-                email=None,
-                first_name="New",
-                last_name="User",
-            )
-
-        assert "X-Customer-Email" in exc_info.value.message
-
-    @pytest.mark.asyncio
-    async def test_get_or_create_raises_422_when_first_name_missing(self, repo):
-        repo.get_by_keycloak_id = AsyncMock(return_value=None)
-
-        with pytest.raises(ValidationError) as exc_info:
-            await repo.get_or_create(
-                keycloak_user_id="kc-new",
-                email="new@example.com",
-                first_name=None,
-                last_name="User",
-            )
-
-        assert "X-Customer-First-Name" in exc_info.value.message
-
-    @pytest.mark.asyncio
-    async def test_get_or_create_raises_422_when_last_name_missing(self, repo):
-        repo.get_by_keycloak_id = AsyncMock(return_value=None)
-
-        with pytest.raises(ValidationError) as exc_info:
-            await repo.get_or_create(
-                keycloak_user_id="kc-new",
-                email="new@example.com",
-                first_name="New",
-                last_name=None,
-            )
-
-        assert "X-Customer-Last-Name" in exc_info.value.message
 
     @pytest.mark.asyncio
     async def test_update_customer_empty_payload_returns_existing(self, repo):

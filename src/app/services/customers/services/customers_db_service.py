@@ -13,9 +13,15 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.shared.database.repository import BaseRepository
-from app.shared.exceptions import access_denied, entity_not_found, missing_field
+from app.shared.exceptions import access_denied, entity_not_found
+
 from ..models.customers_db_models import AddressDB, CustomerDB
-from ..models.customers_models import AddressCreate, AddressUpdate, CustomerUpdate
+from ..models.customers_models import (
+    AddressCreate,
+    AddressUpdate,
+    CustomerCreate,
+    CustomerUpdate,
+)
 
 
 class CustomerRepository(BaseRepository[CustomerDB]):
@@ -35,40 +41,9 @@ class CustomerRepository(BaseRepository[CustomerDB]):
             raise entity_not_found("Customer", keycloak_user_id)
         return customer
 
-    async def get_or_create(
-        self,
-        keycloak_user_id: str,
-        email: str | None,
-        first_name: str | None,
-        last_name: str | None,
-    ) -> tuple[CustomerDB, bool]:
-        """
-        Return the customer matching *keycloak_user_id*, creating it if absent.
-
-        On first call (no existing profile), all creation fields are required.
-        Raises missing_field (422) if any creation field is absent.
-
-        Returns:
-            (customer, created) — created is True when a new record was inserted.
-        """
-        customer = await self.get_by_keycloak_id(keycloak_user_id)
-        if customer is not None:
-            return customer, False
-
-        if not email:
-            raise missing_field("X-Customer-Email")
-        if not first_name:
-            raise missing_field("X-Customer-First-Name")
-        if not last_name:
-            raise missing_field("X-Customer-Last-Name")
-
-        customer = await self.create(
-            keycloak_user_id=keycloak_user_id,
-            email=email,
-            first_name=first_name,
-            last_name=last_name,
-        )
-        return customer, True
+    async def create_customer(self, payload: CustomerCreate) -> CustomerDB:
+        """Create and return a customer from validated profile data."""
+        return await self.create(**payload.model_dump())
 
     async def update_customer(
         self,
