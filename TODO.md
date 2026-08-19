@@ -3,6 +3,10 @@
 Ordered by dependency. Each phase builds on the previous.  
 CRUD for items (`crud-item-store`) is handled by a partner and not listed here.
 
+**Status:** Phases 0–3 are complete and merged. Phase 4 (operational hardening) is the
+current work. Auth is the one cross-cutting gap: every protected route still uses a
+development header shim rather than Keycloak — see the Auth section below.
+
 ---
 
 ## Shared Infrastructure (already done ✅)
@@ -11,257 +15,274 @@ CRUD for items (`crud-item-store`) is handled by a partner and not listed here.
 - [x] Logger module (`shared/logger/`)
 - [x] Exceptions module (`shared/exceptions/`)
 - [x] Responses module (`shared/responses/`)
-- [x] Database module (`shared/database/`) — async SQLAlchemy 2.0, BaseRepository, migrations, health
-- [x] Keycloak auth (`authorize/keycloak.py`)
+- [x] Database module (`shared/database/`) — async SQLAlchemy 2.0, BaseRepository, session, health
+- [ ] Keycloak auth (`authorize/keycloak.py`) — module exists but is unwired legacy code:
+      it reads `os.getenv` directly instead of `shared/config`, and nothing imports it.
+      Every protected route currently uses a header shim instead. See **Auth** below.
 - [x] FastAPI app skeleton (`main.py`)
 
 ---
 
 ## Model Convention
 
-> **All models throughout this project are pure Pydantic models.**  
-> SQLAlchemy's `Base` / `DeclarativeBase` is **not used** for domain entities.  
-> Database interaction happens via the `BaseRepository` with raw SQL or query builders — models are validated and serialized exclusively through Pydantic.
+Each entity has **two** model layers, and they are deliberately separate:
 
-Pattern per entity:
+- **ORM models** — `*_db_models.py`, mapping the table with SQLAlchemy 2.0
+  `DeclarativeBase`. `shared/database/base.py` defines the shared `Base` and
+  `TimestampMixin`. These own the schema.
+- **Pydantic schemas** — `*_models.py`, owning the API contract: validation of input and
+  shape of output.
 
 ```
-models/
-├── customer.py
-│   ├── CustomerBase(BaseModel)       # shared fields
-│   ├── CustomerCreate(CustomerBase)  # input / write schema
-│   ├── CustomerUpdate(BaseModel)     # partial update (all Optional)
-│   └── CustomerResponse(CustomerBase)  # output / read schema, incl. id + timestamps
+services/customers/models/
+├── customers_db_models.py     # CustomerDB(Base), AddressDB(Base)  — the tables
+└── customers_models.py        # CustomerBase / Create / Update / Response — the API
 ```
 
-- Use `model_config = ConfigDict(from_attributes=True)` on response models if mapping from DB rows
-- Timestamps (`created_at`, `updated_at`) are read-only response fields, never in Create/Update schemas
-- Primary keys are always in response models only, never in Create schemas
+Response models set `model_config = ConfigDict(from_attributes=True)` so an ORM row maps
+straight through `Model.model_validate(row)`. Timestamps (`created_at`, `updated_at`) and
+primary keys appear on response models only, never on Create/Update schemas.
+
+Data access goes through `BaseRepository` (`shared/database/repository.py`), which is
+typed to the **ORM** model. Business rules live in the repository, not in routers.
+
+### Schema creation
+
+There is no Alembic setup. `src/app/db_models.py` imports every ORM module so
+`Base.metadata.create_all()` sees the full schema, and the app creates tables on startup.
+This is fine for development but does not handle column changes to existing tables —
+introducing Alembic is a real outstanding task, tracked in Phase 4.
 
 ---
 
-## Phase 0 — Domain Models & DB Schema
+## Phase 0 — Domain Models & DB Schema ✅
 
-> Prerequisite for everything. No service can be built without these.
+> Complete. Tables are created by `Base.metadata.create_all()` on startup, not Alembic.
 
-### 0.1 Customer & Address
+### 0.1 Customer & Address ✅
 
-- [ ] `CustomerBase`, `CustomerCreate`, `CustomerUpdate`, `CustomerResponse` — fields: id, keycloak_user_id, email, name, created_at, updated_at
-- [ ] `AddressBase`, `AddressCreate`, `AddressUpdate`, `AddressResponse` — fields: id, customer_id, street, city, zip, country, is_default, created_at, updated_at
-- [ ] Alembic migration for `customers` + `addresses` (schema defined separately from Pydantic models)
-- [ ] `CustomerRepository(BaseRepository)` — typed to `CustomerResponse`
-- [ ] `AddressRepository(BaseRepository)` — typed to `AddressResponse`
+- [x] `CustomerDB`, `AddressDB` ORM models (`services/customers/models/customers_db_models.py`)
+- [x] `CustomerBase` / `Create` / `Update` / `Response` and the Address equivalents
+- [x] `CustomerRepository`, `AddressRepository` — includes the one-default-address rule
 
-### 0.2 Inventory
+### 0.2 Inventory ✅
 
-> Depends on partner's `Product`/`SKU` models being accessible.
+- [x] `InventoryItemDB`, `StockReservationDB` ORM models
+- [x] `InventoryItem*` and `StockReservation*` Pydantic schemas, `ReservationStatus` enum
+- [x] `InventoryRepository` — enforces `on_hand >= reserved` and blocks deleting an item
+      that still has active reservations
+- [x] `StockReservationRepository`
 
-- [ ] `InventoryItemBase`, `InventoryItemCreate`, `InventoryItemUpdate`, `InventoryItemResponse` — fields: id, sku_id, on_hand, reserved, created_at, updated_at
-- [ ] `StockReservationBase`, `StockReservationCreate`, `StockReservationResponse` — fields: id, inventory_item_id, order_id, quantity, expires_at, status (`ReservationStatus` enum: ACTIVE / COMMITTED / EXPIRED / RELEASED), created_at, updated_at
-- [ ] DB constraint (in migration): `on_hand >= 0`, `reserved >= 0`, `on_hand >= reserved`
-- [ ] Alembic migration for `inventory_items` + `stock_reservations`
-- [ ] `InventoryRepository(BaseRepository)`
-- [ ] `StockReservationRepository(BaseRepository)`
+### 0.3 Order & OrderItem ✅
 
-### 0.3 Order & OrderItem
+- [x] `OrderStatus` enum: `DRAFT` → `PENDING_PAYMENT` → `PAID` → `READY_TO_SHIP` → `SHIPPED` → `CANCELLED`
+- [x] `OrderDB`, `OrderItemDB` ORM models with `deleted_at` soft delete
+- [x] Order and OrderItem Pydantic schemas
+- [x] `OrderRepository`, `OrderItemRepository`
 
-- [ ] `OrderStatus` enum: `DRAFT` → `PENDING_PAYMENT` → `PAID` → `READY_TO_SHIP` → `SHIPPED` → `CANCELLED`
-- [ ] `OrderBase`, `OrderCreate`, `OrderUpdate`, `OrderResponse` — fields: id, customer_id, status, total_amount, currency, deleted_at, created_at, updated_at
-- [ ] `OrderItemBase`, `OrderItemCreate`, `OrderItemResponse` — fields: id, order_id, sku_id, quantity, unit_price (price snapshot at order time), created_at, updated_at
-- [ ] Alembic migration for `orders` + `order_items`
-- [ ] `OrderRepository(BaseRepository)`
-- [ ] `OrderItemRepository(BaseRepository)`
+### 0.4 Payment ✅
 
-### 0.4 Payment
+- [x] `PaymentStatus` (PENDING / SUCCEEDED / FAILED / REFUNDED) and `PaymentProvider` enums
+- [x] `PaymentDB` ORM model + Pydantic schemas
+- [x] `PaymentRepository`
 
-- [ ] `PaymentStatus` enum: PENDING / SUCCEEDED / FAILED / REFUNDED
-- [ ] `PaymentProvider` enum: STRIPE / …
-- [ ] `PaymentBase`, `PaymentCreate`, `PaymentUpdate`, `PaymentResponse` — fields: id, order_id, provider, provider_reference, amount, currency, status, created_at, updated_at
-- [ ] Alembic migration for `payments` (unique constraint on `order_id`, unique on `provider_reference`)
-- [ ] `PaymentRepository(BaseRepository)`
+### 0.5 Webhook Event Inbox ✅
 
-### 0.5 Webhook Event Inbox (idempotency)
+- [x] `WebhookEventDB` ORM model, unique on `(provider, event_id)` for idempotency
+- [x] `WebhookEventRepository`
 
-- [ ] `WebhookEventCreate`, `WebhookEventResponse` — fields: id, provider, event_id, payload (dict), processed_at, created_at
-- [ ] Alembic migration for `webhook_events` (unique constraint on `(provider, event_id)`)
-- [ ] `WebhookEventRepository(BaseRepository)`
+### 0.6 Shipment ✅
 
-### 0.6 Shipment
-
-- [ ] `Carrier` enum: DHL / MANUAL
-- [ ] `ShipmentStatus` enum: PENDING / LABEL_CREATED / HANDED_OVER
-- [ ] `ShipmentBase`, `ShipmentCreate`, `ShipmentUpdate`, `ShipmentResponse` — fields: id, order_id, carrier, tracking_number, label_url, label_format (PDF / ZPL), status, created_at, updated_at
-- [ ] Alembic migration for `shipments` (unique constraint on `order_id`)
-- [ ] `ShipmentRepository(BaseRepository)`
+- [x] `Carrier` (DHL / MANUAL) and `ShipmentStatus` (PENDING / LABEL_CREATED / HANDED_OVER) enums
+- [x] `ShipmentDB` ORM model + Pydantic schemas
+- [x] `ShipmentRepository`
 
 ---
 
-## Phase 1 — Checkout & Payment (`services/order-processing/`)
+## Phase 1 — Checkout & Payment (`services/orders/`) ✅
 
-> Create service: `src/app/services/order-processing/`
+### 1.1 Cart / Draft Order API ✅
 
-### 1.1 Cart / Draft Order API
+- [x] `POST /v1/orders` — create draft order with price snapshot per line
+- [x] `GET /v1/orders/{id}` — customer-scoped retrieval
+- [x] `DELETE /v1/orders/{id}` — cancel a draft order
+- [x] Router registered in `main.py`
 
-- [ ] `POST /orders` — create draft order with line items (price snapshot from SKU)
-- [ ] `GET /orders/{id}` — retrieve order (customer-scoped via Keycloak token)
-- [ ] `DELETE /orders/{id}` — cancel draft order
-- [ ] Pydantic models: `OrderCreate`, `OrderItemCreate`, `OrderResponse`, `OrderDetailResponse`
-- [ ] Business logic: validate SKUs exist, calculate totals, create `Order` in `DRAFT` status
-- [ ] Register router in `main.py`
+### 1.2 Inventory Reservation ✅
 
-### 1.2 Inventory Reservation
+- [x] `reserve_inventory` — atomic check-and-reserve in one transaction
+- [x] `release_reservation` — RELEASED, decrement `reserved`
+- [x] `commit_reservation` — COMMITTED, decrement `on_hand` + `reserved`
+- [x] `expire_reservations` — sweep releasing TTL-exceeded reservations
+- [x] `reservation_ttl_minutes` in `Settings`
+- [ ] **Not scheduled yet.** `expire_reservations` exists as a function but nothing calls
+      it periodically — see Phase 4.2.
 
-- [ ] `functions/reserve_inventory.py` — atomic check-and-reserve (single DB transaction)
-  - Check `on_hand - reserved >= requested quantity`
-  - Insert `StockReservation` (status=ACTIVE, expires_at = now + configurable TTL)
-  - Increment `reserved` on `InventoryItem`
-- [ ] `functions/release_reservation.py` — set reservation to RELEASED, decrement `reserved`
-- [ ] `functions/commit_reservation.py` — set reservation to COMMITTED, decrement `on_hand` + `reserved`
-- [ ] `functions/expire_reservations.py` — background cleanup: expire stale reservations and release stock
-- [ ] Add `RESERVATION_TTL_MINUTES` to `Settings`
+### 1.3 Checkout Endpoint ✅
 
-### 1.3 Checkout Endpoint
+- [x] `POST /v1/orders/{id}/checkout` — `DRAFT` → `PENDING_PAYMENT`, reserves stock,
+      creates the payment intent, returns the client secret
 
-- [ ] `POST /orders/{id}/checkout` — transition `DRAFT` → `PENDING_PAYMENT`
-  - Reserve inventory (reject with 409 if insufficient stock, include which SKUs)
-  - Create PSP payment session/intent (see 1.4)
-  - Return PSP client secret / redirect URL
+### 1.4 PSP Integration ✅
 
-### 1.4 PSP Integration (Stripe recommended as first adapter)
+- [x] `PaymentProviderAdapter` interface + `StripeAdapter`
+- [x] `stripe_secret_key`, `stripe_webhook_secret`, `stripe_payment_methods` in `Settings`
 
-- [ ] `services/payment_provider/` subfolder inside `order-processing`
-- [ ] `PaymentProviderAdapter` interface (abstract base): `create_session(order) → ProviderSession`, `verify_webhook(headers, body) → WebhookPayload`
-- [ ] `StripeAdapter` implementing the interface
-- [ ] Add `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` to `Settings`
+### 1.5 Webhook Endpoint ✅
 
-### 1.5 Webhook Endpoint
-
-- [ ] `POST /webhooks/stripe` — raw body endpoint (do NOT parse body as JSON before signature check)
-- [ ] Signature verification via `StripeAdapter.verify_webhook()`
-- [ ] Idempotency check: lookup `(provider="stripe", event_id=stripe_event_id)` in `webhook_events` — return 200 if already processed
-- [ ] On `payment_intent.succeeded`:
-  - DB transaction: insert `WebhookEvent`, update `Payment` → SUCCEEDED, update `Order` → PAID, call `commit_reservation()`
-  - Enqueue fulfillment job (Phase 3; use a no-op stub for now)
-- [ ] On `payment_intent.payment_failed`:
-  - DB transaction: insert `WebhookEvent`, update `Payment` → FAILED, update `Order` → CANCELLED, call `release_reservation()`
-- [ ] Register webhook router in `main.py`
+- [x] `POST /v1/webhooks/stripe` — raw body, signature verified before parsing
+- [x] Idempotency via the `webhook_events` inbox
+- [x] `payment_intent.succeeded` → Payment SUCCEEDED, Order PAID, commit reservation
+- [x] `payment_intent.payment_failed` → Payment FAILED, Order CANCELLED, release reservation
+- [x] Router registered in `main.py`
 
 ---
 
-## Phase 2 — Admin Fulfillment (`services/admin/`)
+## Phase 2 — Admin Fulfillment (`services/admin/`) ✅
 
-> Requires Phase 1 complete. No carrier integration yet — ship manually.
+### 2.1 Admin Order Management ✅
 
-- [ ] Create service: `src/app/services/admin/`
-- [ ] Keycloak role guard for all admin routes (e.g. `role="admin"`)
+- [x] `GET /v1/admin/orders` — paginated, filterable by status
+- [x] `GET /v1/admin/orders/{id}` — detail with items, customer, address, payment, shipment
+- [x] `PATCH /v1/admin/orders/{id}/status` — manual override, reason written to the audit log
 
-### 2.1 Admin Order Management
+### 2.2 Pick & Pack Documents ✅
 
-- [ ] `GET /admin/orders` — list orders, filter by status, paginated (`PaginatedResponse`)
-- [ ] `GET /admin/orders/{id}` — order detail with items, customer, address, payment, shipment
-- [ ] `PATCH /admin/orders/{id}/status` — manual status override with audit log
+- [x] `GET /v1/admin/orders/{id}/packing-slip` — print-friendly HTML
+- [x] `GET /v1/admin/orders/pick-list` — batch pick list aggregated by SKU across PAID orders
+- [x] All user-controlled values HTML-escaped before interpolation
 
-### 2.2 Pick & Pack Documents
+### 2.3 Manual Shipment Marking ✅
 
-- [ ] `GET /admin/orders/{id}/packing-slip` — HTML response (print-friendly) listing items, quantities, customer address
-- [ ] `GET /admin/orders/{id}/pick-list` — aggregate pick list across multiple orders (batch picking)
+- [x] `POST /v1/admin/orders/{id}/shipments` — create shipment, Order → `READY_TO_SHIP`
+- [x] `POST /v1/admin/orders/{id}/ship` — Order → `SHIPPED`, sends the tracking email
 
-### 2.3 Manual Shipment Marking
+### 2.4 Customer Notification Email ✅
 
-- [ ] `POST /admin/orders/{id}/shipments` — create `Shipment` with manual tracking number; transition `Order` → `READY_TO_SHIP`
-- [ ] `POST /admin/orders/{id}/ship` — mark as handed over to carrier; transition `Order` → `SHIPPED`
-- [ ] Trigger customer notification email on `SHIPPED` (see 2.4)
-
-### 2.4 Customer Notification Email
-
-- [ ] `functions/send_tracking_email.py` — send tracking number + carrier link to customer
-- [ ] Add `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM` to `Settings`
-- [ ] Use async SMTP (e.g. `aiosmtplib`); templated HTML email
+- [x] `functions/send_tracking_email.py` — multipart text + HTML, HTML part escaped
+- [x] `smtp_host`, `smtp_port`, `smtp_user`, `smtp_password`, `email_from` in `Settings`
+- [x] Blocking SMTP wrapped in `asyncio.to_thread`; empty `smtp_host` skips sending in dev
+- [ ] Optional: swap `smtplib` for `aiosmtplib` and move the body to a template
 
 ---
 
-## Phase 3 — Automated Label Generation (`services/fulfillment/`)
+## Phase 3 — Automated Label Generation (`services/fulfillment/`) ✅
 
-> Requires Phase 2 complete. Replaces the manual shipping step with automation.
+### 3.1 Background Job System ✅
 
-### 3.1 Background Job System
+- [x] ARQ worker (`src/app/worker.py`, `worker_main.py`), Redis-backed
+- [x] `create_label` job with retries, exponential backoff and a dead-letter hook
+- [x] `arq_max_jobs`, `arq_job_timeout`, `arq_max_tries` in `Settings`
 
-- [ ] Evaluate and add queue backend: **ARQ** (Redis-based, async, fits FastAPI well) recommended
-- [ ] Add `REDIS_URL` to `Settings`
-- [ ] Worker entry point: `src/app/worker.py`
-- [ ] Job: `create_label_job(order_id: int)` — retries (max 5), exponential backoff, dead-letter logging
+### 3.2 Carrier Abstraction Layer ✅
 
-### 3.2 Carrier Abstraction Layer
+- [x] `CarrierAdapter` interface returning `LabelResult`
+- [x] `ManualCarrierAdapter`
 
-- [ ] `services/fulfillment/carrier/interface.py` — `CarrierAdapter` abstract base
-  ```
-  create_label(order: OrderResponse, shipment: ShipmentResponse) → LabelResult
-  LabelResult(BaseModel): tracking_number, label_url, label_format
-  ```
-- [ ] `ManualCarrierAdapter` — no-op adapter (used in Phase 2, keeps interface consistent)
+### 3.3 DHL Adapter ✅
 
-### 3.3 DHL Adapter
+- [x] `DhlAdapter(CarrierAdapter)` against the DHL Parcel DE Shipping API
+- [x] `dhl_*` settings incl. billing number and default label format
+- [x] Labels stored in MinIO via `StorageAdapter`; `storage_*` settings
+- [x] DHL errors raise `CarrierError`
 
-- [ ] `services/fulfillment/carrier/dhl.py` — `DhlAdapter(CarrierAdapter)`
-- [ ] DHL Parcel DE Shipping API (REST): create shipment, retrieve label PDF/ZPL
-- [ ] Add `DHL_API_KEY`, `DHL_ACCOUNT_NUMBER`, `DHL_PRODUCT` to `Settings`
-- [ ] Store label binary in object storage (S3 / MinIO) — add `STORAGE_*` settings
-- [ ] Handle DHL error responses with proper `AppException` subclass
+### 3.4 Admin Label Workflow ✅
 
-### 3.4 Admin Label Workflow
+- [x] `POST /v1/admin/orders/{id}/label` — trigger or re-trigger label creation
+- [x] `GET /v1/admin/orders/{id}/label` — download the stored label
+- [x] Idempotency guard: a shipment that already has a tracking number is never sent to
+      the carrier again, so a re-delivered job cannot buy a second label
 
-- [ ] `POST /admin/orders/{id}/label` — trigger `create_label_job` manually (or re-trigger on failure)
-- [ ] `GET /admin/orders/{id}/label` — download label PDF/ZPL (proxy from storage)
-- [ ] Rules: only allowed when `Order.status == PAID` and no committed label exists
+### 3.5 Outbox Pattern ✅
 
-### 3.5 Outbox Pattern (reliable job enqueueing)
+- [x] `OutboxEventDB` + `OutboxRepository`
+- [x] Webhook handler inserts an outbox row in the same transaction as the order update
+- [x] `poll_outbox` cron sweeps PENDING rows into ARQ, honouring `outbox_poll_interval`
+- [x] Attempt ceiling: past `outbox_max_attempts` a row is marked `FAILED` and skipped.
+      `FAILED` (never reached the queue) is deliberately distinct from `DEAD` (ran and
+      exhausted retries); `list_failed()` gives maintainers the first category
 
-- [ ] `OutboxEventCreate`, `OutboxEventResponse` Pydantic models — fields: id, event_type, payload (dict), enqueued_at, created_at
-- [ ] Replace direct ARQ enqueue in webhook handler with outbox insert (same transaction as order update)
-- [ ] Background poller: read un-enqueued outbox events, push to ARQ, mark enqueued
+---
+
+## Customers & Inventory APIs ✅
+
+> Not in the original plan; added alongside Phases 2–3.
+
+- [x] `GET`/`PATCH /v1/customers/me` — profile, auto-created on first call
+- [x] `GET`/`POST`/`PATCH`/`DELETE /v1/customers/me/addresses` — address management
+- [x] Full admin CRUD for inventory under `/v1/admin/inventory`
+
+---
+
+## Auth — the current gap
+
+Every protected route uses a development header shim. This is the single largest piece of
+outstanding work, and it is deliberately isolated so the swap touches few files.
+
+- [ ] Replace `X-Keycloak-User-ID` with a validated JWT — `services/customers/dependencies.py`
+      (`get_keycloak_id`, `get_creation_claims`). Tracked in #16.
+- [ ] Replace `X-Admin-Key` with a Keycloak `role=admin` check — `services/admin/dependencies.py`
+      (`require_admin`, now shared by the admin and inventory services).
+- [ ] Rework `authorize/keycloak.py`: it reads `os.getenv` directly rather than
+      `shared/config`, and nothing imports it. Both shims should end up there.
 
 ---
 
 ## Phase 4 — Operational Hardening
 
+> Current focus. Nothing in this phase is on `main` yet, apart from the one item marked
+> done in 4.5.
+
 ### 4.1 Observability
 
-- [ ] Correlation ID middleware — inject `X-Request-ID` into every request's log context (already supported by `shared/logger/context.py`)
-- [ ] Structured log fields: `order_id`, `payment_id`, `user_id` on all relevant log statements
-- [ ] Health endpoints: `GET /health` (liveness) + `GET /health/ready` (DB + Redis checks via `shared/database/health.py`)
-- [ ] Prometheus metrics endpoint (optional; add `prometheus-fastapi-instrumentator`)
+- [ ] Correlation ID middleware injecting `X-Request-ID` into the log context
+- [ ] Structured log fields (`order_id`, `payment_id`, `user_id`) on all relevant statements
+- [ ] Health endpoints: `GET /health` (liveness) and `GET /health/ready` (DB + Redis)
+- [ ] Prometheus metrics endpoint (optional)
 
-### 4.2 Reservation Expiry Job (production-grade)
+### 4.2 Reservation Expiry Job
 
-- [ ] ARQ scheduled job: run `expire_reservations()` every N minutes
-- [ ] Alert admin on repeated expiry failures
+- [ ] Schedule the existing `expire_reservations` as an ARQ cron job — the function is
+      written and tested, only the schedule is missing
+- [ ] Alert on repeated expiry failures
 
 ### 4.3 Payment Reversals / Refunds
 
-- [ ] Handle `charge.refunded` / `payment_intent.canceled` Stripe webhooks
-- [ ] `Payment` → REFUNDED, `Order` → CANCELLED, `release_reservation()` if not yet committed
-- [ ] If already committed/shipped: create `Refund` record (separate model), flag for manual review
+- [ ] Handle `charge.refunded` and `payment_intent.canceled` webhooks
+- [ ] Payment → REFUNDED, Order → CANCELLED, release the reservation if not yet committed
+- [ ] If already shipped: create a `Refund` record and flag for manual review
+- [ ] Note: `PaymentStatus.REFUNDED` already exists, but nothing sets it
 
-### 4.4 Returns & RMA (basic)
+### 4.4 Returns & RMA
 
 - [ ] `ReturnStatus` enum: REQUESTED / APPROVED / RECEIVED / REFUNDED
-- [ ] `ReturnCreate`, `ReturnUpdate`, `ReturnResponse` Pydantic models — fields: id, order_id, reason, status, created_at, updated_at
-- [ ] `POST /orders/{id}/returns` — customer requests return
-- [ ] `PATCH /admin/returns/{id}` — admin approves and processes
+- [ ] `Return` ORM model + schemas
+- [ ] `POST /v1/orders/{id}/returns` — customer requests a return
+- [ ] `PATCH /v1/admin/returns/{id}` — admin approves and processes
 
 ### 4.5 Security Hardening
 
-- [ ] Restrict CORS `origins` in `main.py` (currently `["*"]`)
-- [ ] Rate limiting on webhook endpoint (e.g. `slowapi`)
-- [ ] Replace `secret_key` default `"CHANGE_ME_IN_PRODUCTION"` with startup validation
+- [x] `secret_key` startup validation rejects the default in production
+- [ ] Restrict CORS — `main.py` still sets `origins = ["*"]`
+- [ ] Rate limiting, at minimum on the webhook endpoint
+- [ ] Enable Trivy/Bandit as *blocking* checks — both are `continue-on-error: true`, so
+      findings never fail the build
+
+### 4.6 Schema Migrations
+
+- [ ] Introduce Alembic. `create_all()` cannot alter existing tables, so any column change
+      currently requires dropping the database — unacceptable once there is real data.
 
 ---
 
 ## Cross-Cutting Tasks (do as you go)
 
-- [ ] Write pytest tests for every new service module (mirror `tests/` structure)
-- [ ] Add each new model to Alembic `env.py` imports so auto-generate works
-- [ ] Register every new service router in `main.py`
-- [ ] Keep `Settings` as the single source of truth for all env vars — no hardcoded values
-- [ ] Use `shared/exceptions/` for all error cases — never return raw HTTP exceptions from business logic
-- [ ] Use `shared/responses/` factory helpers (`success()`, `paginated()`, `error_from_exception()`) in all routers
+- [x] Register every new service router in `main.py`
+- [x] Keep `Settings` the single source of truth for env vars — no hardcoded values
+- [x] Use `shared/exceptions/` for all error cases — never raw `HTTPException` in business logic
+- [x] Use `shared/responses/` factory helpers in routers
+- [ ] Write pytest tests for every new service module (mirror `tests/` structure) — held so
+      far; keep it that way
+- [ ] Document new env vars in **both** `.env.example` and `docs/config.md`
+- [ ] Commit with LF line endings and run `ruff format` — the CI lint job is
+      `continue-on-error`, so it will not catch drift for you
