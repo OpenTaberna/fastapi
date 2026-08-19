@@ -1,7 +1,7 @@
 ############################################
 # 1) uv installer stage
 ############################################
-FROM python:3.12-slim AS uv-base
+FROM python:3.14-slim AS uv-base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -16,7 +16,7 @@ RUN apt-get update \
 ############################################
 # 2) deps stage: build a self-contained venv
 ############################################
-FROM python:3.12-slim AS deps
+FROM python:3.14-slim AS deps
 
 # Bring uv from the previous stage
 COPY --from=uv-base /usr/local/bin/uv /usr/local/bin/uv
@@ -37,7 +37,7 @@ RUN uv pip install --python /opt/venv/bin/python --no-cache -r pyproject.toml
 ############################################
 # 3) final stage: copy venv + app code
 ############################################
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 # Copy the prebuilt venv from the deps stage
 COPY --from=deps /opt/venv /opt/venv

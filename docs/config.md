@@ -174,6 +174,67 @@ echo "postgresql://prod-host/prod-db" > /run/secrets/database_url
 |---------|------|---------|-------------|
 | `feature_webhooks_enabled` | bool | `False` | Enable webhooks |
 
+### Email (Tracking Notifications)
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `smtp_host` | str | Empty | SMTP server host. Empty disables sending |
+| `smtp_port` | int | `587` | SMTP port (587 uses STARTTLS) |
+| `smtp_user` | str | Empty | SMTP username |
+| `smtp_password` | str | Empty | SMTP password |
+| `email_from` | str | `noreply@opentaberna.local` | Envelope sender address |
+
+### Object Storage (MinIO / S3)
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `storage_endpoint_url` | str | `http://localhost:9000` | S3-compatible endpoint |
+| `storage_access_key` | str | `minioadmin` | Access key |
+| `storage_secret_key` | str | `minioadmin` | Secret key |
+| `storage_bucket_labels` | str | `labels` | Bucket holding carrier labels |
+| `storage_region` | str | `us-east-1` | Region name |
+
+### DHL (Carrier Adapter)
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `dhl_api_base_url` | str | DHL sandbox | DHL shipping API base URL |
+| `dhl_client_id` | str | `CHANGE_ME` | OAuth2 client ID |
+| `dhl_client_secret` | str | `CHANGE_ME` | OAuth2 client secret |
+| `dhl_billing_number` | str | `CHANGE_ME` | EKP billing number |
+| `dhl_default_label_format` | str | `pdf` | Label format: `pdf` or `zpl` |
+
+### ARQ Worker
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `arq_max_jobs` | int | `10` | Concurrent jobs per worker process |
+| `arq_job_timeout` | int | `300` | Seconds a job may run before it is killed |
+| `arq_max_tries` | int | `5` | Delivery attempts before a job is dead-lettered (`DEAD`) |
+
+### Transactional Outbox
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `outbox_poll_interval` | int | `30` | Seconds between outbox sweeps |
+| `outbox_max_attempts` | int | `5` | Enqueue attempts before an event is marked `FAILED` |
+
+`outbox_poll_interval` drives the poller's schedule directly. ARQ matches
+calendar fields rather than sleeping, so the value is translated into second-,
+minute- or hour-marks: below 60 it fires at `{0, n, 2n, ...}` seconds of every
+minute, below 3600 at the equivalent minute-marks, and above that at
+hour-marks. Changing the setting changes the cadence — it is not advisory.
+
+`outbox_max_attempts` bounds how often the poller retries one event. Past the
+ceiling the row is marked `FAILED` and skipped, which is what stops a
+permanently broken event from being retried on every sweep forever.
+
+**`FAILED` and `DEAD` are not the same state.** `FAILED` means the poller never
+managed to hand the event to ARQ, so no job ever ran. `DEAD` means the job did
+run and exhausted `arq_max_tries`. Keeping them apart lets maintainers filter
+for the two failure classes separately — `OutboxRepository.list_failed()`
+returns the first kind.
+
 ---
 
 ## Usage Examples

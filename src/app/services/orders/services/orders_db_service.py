@@ -113,6 +113,31 @@ class OrderItemRepository(BaseRepository[OrderItemDB]):
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(OrderItemDB, session)
 
+    async def get_by_order_ids(self, order_ids: list[UUID]) -> list[OrderItemDB]:
+        """
+        Bulk-fetch all order items belonging to the given order IDs.
+
+        Used when generating pick lists so an entire batch of orders can be
+        loaded in a single query instead of N individual item look-ups.
+
+        Args:
+            order_ids: List of order UUIDs whose items should be fetched.
+
+        Returns:
+            List of OrderItemDB instances for all supplied order IDs.
+            Returns an empty list when order_ids is empty.
+        """
+        logger.debug(
+            "Bulk-fetching order items by order IDs",
+            extra={"order_count": len(order_ids)},
+        )
+        if not order_ids:
+            return []
+
+        stmt = select(self.model).where(self.model.order_id.in_(order_ids))
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
 
 # ---------------------------------------------------------------------------
 # Dependency injection factories

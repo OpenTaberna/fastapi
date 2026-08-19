@@ -57,7 +57,9 @@ class InventoryItemResponse(InventoryItemBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID = Field(..., description="Internal inventory item UUID")
-    reserved: int = Field(default=0, ge=0, description="Units locked by active reservations")
+    reserved: int = Field(
+        default=0, ge=0, description="Units locked by active reservations"
+    )
     created_at: datetime = Field(..., description="Record creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
 

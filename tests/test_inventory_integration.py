@@ -45,8 +45,16 @@ def _psql(sql: str) -> None:
     """Execute a SQL statement inside the running Postgres container."""
     subprocess.run(
         [
-            "docker", "exec", "opentaberna-db",
-            "psql", "-U", "opentaberna", "-d", "opentaberna", "-c", sql,
+            "docker",
+            "exec",
+            "opentaberna-db",
+            "psql",
+            "-U",
+            "opentaberna",
+            "-d",
+            "opentaberna",
+            "-c",
+            sql,
         ],
         check=True,
         capture_output=True,
@@ -245,34 +253,26 @@ class TestListInventoryItems:
 
     def test_list_limit_respected(self, inventory_item):
         """limit=1 returns at most 1 item."""
-        response = requests.get(
-            INVENTORY_URL + "/?limit=1", headers=ADMIN_HEADERS
-        )
+        response = requests.get(INVENTORY_URL + "/?limit=1", headers=ADMIN_HEADERS)
 
         assert response.status_code == 200
         assert len(response.json()["items"]) <= 1
 
     def test_list_invalid_skip_returns_422(self):
         """skip < 0 returns 422."""
-        response = requests.get(
-            INVENTORY_URL + "/?skip=-1", headers=ADMIN_HEADERS
-        )
+        response = requests.get(INVENTORY_URL + "/?skip=-1", headers=ADMIN_HEADERS)
 
         assert response.status_code == 422
 
     def test_list_invalid_limit_returns_422(self):
         """limit=0 is below the minimum of 1 — returns 422."""
-        response = requests.get(
-            INVENTORY_URL + "/?limit=0", headers=ADMIN_HEADERS
-        )
+        response = requests.get(INVENTORY_URL + "/?limit=0", headers=ADMIN_HEADERS)
 
         assert response.status_code == 422
 
     def test_list_limit_above_max_returns_422(self):
         """limit=201 is above the maximum of 200 — returns 422."""
-        response = requests.get(
-            INVENTORY_URL + "/?limit=201", headers=ADMIN_HEADERS
-        )
+        response = requests.get(INVENTORY_URL + "/?limit=201", headers=ADMIN_HEADERS)
 
         assert response.status_code == 422
 
@@ -316,9 +316,7 @@ class TestGetInventoryBySku:
 
     def test_get_by_sku_missing_admin_key_returns_403(self, inventory_item):
         """Omitting X-Admin-Key returns 403."""
-        response = requests.get(
-            f"{INVENTORY_URL}/by-sku/{inventory_item['sku']}"
-        )
+        response = requests.get(f"{INVENTORY_URL}/by-sku/{inventory_item['sku']}")
 
         assert response.status_code == 403
 
@@ -423,9 +421,7 @@ class TestUpdateInventoryItem:
 
         # Seed reserved=10 directly in the DB — the API intentionally does not
         # expose reserved as a writable field.
-        _psql(
-            f"UPDATE inventory_items SET reserved = 10 WHERE id = '{item['id']}'"
-        )
+        _psql(f"UPDATE inventory_items SET reserved = 10 WHERE id = '{item['id']}'")
 
         # Now try to set on_hand=5 (below reserved=10) — must fail
         update_resp = requests.patch(
@@ -523,9 +519,7 @@ class TestDeleteInventoryItem:
 
     def test_delete_invalid_uuid_returns_422(self):
         """A malformed UUID path parameter returns 422."""
-        response = requests.delete(
-            f"{INVENTORY_URL}/not-a-uuid", headers=ADMIN_HEADERS
-        )
+        response = requests.delete(f"{INVENTORY_URL}/not-a-uuid", headers=ADMIN_HEADERS)
 
         assert response.status_code == 422
 
