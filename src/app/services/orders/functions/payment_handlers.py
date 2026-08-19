@@ -14,10 +14,12 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.payments.adapters import WebhookEventResult
+from app.services.payments.models import PaymentStatus
+from app.services.payments.services import get_payment_repository
 from app.shared.logger import get_logger
 
 from .inventory_functions import commit_reservation, release_reservation
-from ..models import OrderStatus
+from ..models import OrderDB, OrderStatus
 from ..services import OrderRepository
 
 logger = get_logger(__name__)
@@ -64,7 +66,7 @@ async def handle_payment_succeeded(
     session: AsyncSession,
     order_repo: OrderRepository,
     order_id: UUID,
-    event_id: str,
+    event: WebhookEventResult,
 ) -> None:
     """
     Transition order → PAID and commit inventory reservation.
@@ -77,13 +79,13 @@ async def handle_payment_succeeded(
         session:    Active AsyncSession (must be inside a transaction).
         order_repo: OrderRepository instance.
         order_id:   Internal order UUID from webhook metadata.
-        event_id:   Stripe event ID for log context.
+        event:      Parsed Stripe event containing the payment reference.
     """
     order = await order_repo.get(order_id)
     if order is None:
         logger.error(
             "payment_intent.succeeded for unknown order",
-            extra={"order_id": str(order_id), "event_id": event_id},
+            extra={"order_id": str(order_id), "event_id": event.event_id},
         )
         return
 
@@ -93,17 +95,18 @@ async def handle_payment_succeeded(
             extra={
                 "order_id": str(order_id),
                 "current_status": order.status,
-                "event_id": event_id,
+                "event_id": event.event_id,
             },
         )
         return
 
+    await _set_payment_status(session, order, event, PaymentStatus.SUCCEEDED)
     await order_repo.update(order_id, status=OrderStatus.PAID.value)
     await commit_reservation(session, order_id)
 
     logger.info(
         "Order marked PAID and inventory committed",
-        extra={"order_id": str(order_id), "event_id": event_id},
+        extra={"order_id": str(order_id), "event_id": event.event_id},
     )
 
 
@@ -111,7 +114,7 @@ async def handle_payment_failed(
     session: AsyncSession,
     order_repo: OrderRepository,
     order_id: UUID,
-    event_id: str,
+    event: WebhookEventResult,
 ) -> None:
     """
     Transition order → CANCELLED and release inventory reservation.
@@ -124,13 +127,13 @@ async def handle_payment_failed(
         session:    Active AsyncSession (must be inside a transaction).
         order_repo: OrderRepository instance.
         order_id:   Internal order UUID from webhook metadata.
-        event_id:   Stripe event ID for log context.
+        event:      Parsed Stripe event containing the payment reference.
     """
     order = await order_repo.get(order_id)
     if order is None:
         logger.error(
             "payment_intent.payment_failed for unknown order",
-            extra={"order_id": str(order_id), "event_id": event_id},
+            extra={"order_id": str(order_id), "event_id": event.event_id},
         )
         return
 
@@ -143,11 +146,12 @@ async def handle_payment_failed(
             extra={
                 "order_id": str(order_id),
                 "current_status": order.status,
-                "event_id": event_id,
+                "event_id": event.event_id,
             },
         )
         return
 
+    await _set_payment_status(session, order, event, PaymentStatus.FAILED)
     await order_repo.update(
         order_id,
         status=OrderStatus.CANCELLED.value,
@@ -157,5 +161,47 @@ async def handle_payment_failed(
 
     logger.info(
         "Order cancelled and inventory reservation released",
-        extra={"order_id": str(order_id), "event_id": event_id},
+        extra={"order_id": str(order_id), "event_id": event.event_id},
     )
+
+
+async def _set_payment_status(
+    session: AsyncSession,
+    order: OrderDB,
+    event: WebhookEventResult,
+    status: PaymentStatus,
+) -> None:
+    """Update the checkout payment, creating it for legacy in-flight orders."""
+    payment_repo = get_payment_repository(session)
+    payment = await payment_repo.get_by(
+        provider="stripe",
+        provider_reference=event.provider_reference,
+    )
+
+    if payment is None:
+        # Orders checked out before payment persistence was added have no row.
+        # Stripe's reference plus the immutable order totals are sufficient to
+        # backfill it while processing the outcome webhook.
+        await payment_repo.create(
+            order_id=order.id,
+            provider="stripe",
+            provider_reference=event.provider_reference,
+            amount=order.total_amount,
+            currency=order.currency,
+            status=status.value,
+        )
+        return
+
+    if payment.order_id != order.id:
+        logger.error(
+            "Stripe payment reference belongs to a different order",
+            extra={
+                "provider_reference": event.provider_reference,
+                "expected_order_id": str(order.id),
+                "actual_order_id": str(payment.order_id),
+                "event_id": event.event_id,
+            },
+        )
+        return
+
+    await payment_repo.update(payment.id, status=status.value)

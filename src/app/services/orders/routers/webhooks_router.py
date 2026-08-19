@@ -166,9 +166,9 @@ async def stripe_webhook(
     order_repo = get_order_repository(session)
 
     if event_type == _EVT_SUCCEEDED:
-        await handle_payment_succeeded(session, order_repo, order_id, event_id)
+        await handle_payment_succeeded(session, order_repo, order_id, event)
     elif event_type == _EVT_FAILED:
-        await handle_payment_failed(session, order_repo, order_id, event_id)
+        await handle_payment_failed(session, order_repo, order_id, event)
     else:
         logger.debug(
             "Stripe webhook event type not handled — ignored",
