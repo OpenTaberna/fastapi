@@ -164,8 +164,16 @@ def _422_examples(*named: tuple[str, str, dict]) -> dict:
 GET_PROFILE_RESPONSES: dict = {
     200: {"description": "Customer profile (auto-created on first call)"},
     **_422_examples(
-        ("missing_keycloak_id", "X-Keycloak-User-ID header missing", MISSING_HEADER_EXAMPLE),
-        ("missing_creation_field", "Creation headers absent for new profile", MISSING_CREATION_FIELD_EXAMPLE),
+        (
+            "missing_keycloak_id",
+            "X-Keycloak-User-ID header missing",
+            MISSING_HEADER_EXAMPLE,
+        ),
+        (
+            "missing_creation_field",
+            "Creation headers absent for new profile",
+            MISSING_CREATION_FIELD_EXAMPLE,
+        ),
     ),
     **_500,
 }
@@ -181,7 +189,11 @@ UPDATE_PROFILE_RESPONSES: dict = {
         "content": {"application/json": {"example": CUSTOMER_NOT_FOUND_EXAMPLE}},
     },
     **_422_examples(
-        ("missing_keycloak_id", "X-Keycloak-User-ID header missing", MISSING_HEADER_EXAMPLE),
+        (
+            "missing_keycloak_id",
+            "X-Keycloak-User-ID header missing",
+            MISSING_HEADER_EXAMPLE,
+        ),
         ("invalid_body", "Request body validation error", BODY_VALIDATION_EXAMPLE),
     ),
     **_500,
@@ -200,7 +212,11 @@ LIST_ADDRESSES_RESPONSES: dict = {
         "content": {"application/json": {"example": CUSTOMER_NOT_FOUND_EXAMPLE}},
     },
     **_422_examples(
-        ("missing_keycloak_id", "X-Keycloak-User-ID header missing", MISSING_HEADER_EXAMPLE),
+        (
+            "missing_keycloak_id",
+            "X-Keycloak-User-ID header missing",
+            MISSING_HEADER_EXAMPLE,
+        ),
     ),
     **_500,
 }
@@ -216,7 +232,11 @@ CREATE_ADDRESS_RESPONSES: dict = {
         "content": {"application/json": {"example": CUSTOMER_NOT_FOUND_EXAMPLE}},
     },
     **_422_examples(
-        ("missing_keycloak_id", "X-Keycloak-User-ID header missing", MISSING_HEADER_EXAMPLE),
+        (
+            "missing_keycloak_id",
+            "X-Keycloak-User-ID header missing",
+            MISSING_HEADER_EXAMPLE,
+        ),
         ("invalid_body", "Request body validation error", BODY_VALIDATION_EXAMPLE),
     ),
     **_500,
@@ -250,8 +270,16 @@ UPDATE_ADDRESS_RESPONSES: dict = {
         },
     },
     **_422_examples(
-        ("missing_keycloak_id", "X-Keycloak-User-ID header missing", MISSING_HEADER_EXAMPLE),
-        ("invalid_uuid", "address_id path parameter is not a valid UUID", INVALID_UUID_EXAMPLE),
+        (
+            "missing_keycloak_id",
+            "X-Keycloak-User-ID header missing",
+            MISSING_HEADER_EXAMPLE,
+        ),
+        (
+            "invalid_uuid",
+            "address_id path parameter is not a valid UUID",
+            INVALID_UUID_EXAMPLE,
+        ),
     ),
     **_500,
 }
@@ -283,8 +311,16 @@ DELETE_ADDRESS_RESPONSES: dict = {
         },
     },
     **_422_examples(
-        ("missing_keycloak_id", "X-Keycloak-User-ID header missing", MISSING_HEADER_EXAMPLE),
-        ("invalid_uuid", "address_id path parameter is not a valid UUID", INVALID_UUID_EXAMPLE),
+        (
+            "missing_keycloak_id",
+            "X-Keycloak-User-ID header missing",
+            MISSING_HEADER_EXAMPLE,
+        ),
+        (
+            "invalid_uuid",
+            "address_id path parameter is not a valid UUID",
+            INVALID_UUID_EXAMPLE,
+        ),
     ),
     **_500,
 }
