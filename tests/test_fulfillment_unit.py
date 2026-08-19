@@ -16,6 +16,9 @@ Covers:
     - OutboxStatus enum
     - enqueue_label_job
     - _extract_carrier_args
+    - _label_already_created / create_label idempotency guard
+    - _build_outbox_cron cadence mapping
+    - poll_outbox attempt ceiling
 """
 
 import base64
@@ -41,7 +44,11 @@ from app.services.fulfillment.adapters.interface import (
     LabelResult,
 )
 from app.services.fulfillment.adapters.manual_adapter import ManualCarrierAdapter
-from app.services.fulfillment.jobs.create_label_job import _extract_carrier_args
+from app.services.fulfillment.jobs.create_label_job import (
+    _extract_carrier_args,
+    _label_already_created,
+    create_label,
+)
 from app.services.fulfillment.outbox.models.outbox_db_models import (
     OutboxEventDB,
     OutboxStatus,
@@ -53,6 +60,11 @@ from app.services.fulfillment.outbox.services.outbox_enqueue import (
 from app.shared.exceptions.enums import ErrorCategory, ErrorCode
 from app.shared.storage.interface import StorageError
 from app.shared.storage.minio_adapter import MinioStorageAdapter, build_minio_adapter
+from app.worker import (
+    _build_outbox_cron,
+    _fail_exhausted_outbox_event,
+    poll_outbox,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -861,8 +873,15 @@ class TestOutboxStatus:
     def test_dead_value(self):
         assert OutboxStatus.DEAD == "dead"
 
-    def test_all_four_members_exist(self):
-        assert len(OutboxStatus) == 4
+    def test_failed_value(self):
+        assert OutboxStatus.FAILED == "failed"
+
+    def test_failed_is_distinct_from_dead(self):
+        # FAILED = never reached ARQ; DEAD = ran and exhausted retries.
+        assert OutboxStatus.FAILED != OutboxStatus.DEAD
+
+    def test_all_five_members_exist(self):
+        assert len(OutboxStatus) == 5
 
 
 # ---------------------------------------------------------------------------
@@ -1081,3 +1100,299 @@ class TestExtractCarrierArgs:
         ctx = _make_order_context(shipment=shipment)
         args = _extract_carrier_args(ctx, shipment.id)
         assert args["carrier"] == "dhl"
+
+
+# ---------------------------------------------------------------------------
+# create_label idempotency guard — prevents duplicate carrier billing
+# ---------------------------------------------------------------------------
+
+
+class TestLabelAlreadyCreated:
+    """
+    _label_already_created is the guard that stops a re-delivered outbox
+    event from buying a second label for a shipment that already has one.
+    """
+
+    async def test_returns_true_when_tracking_number_present(self):
+        session = AsyncMock()
+        shipment = _make_shipment()
+        shipment.tracking_number = "00340434161094042557"
+        with patch(
+            "app.services.fulfillment.jobs.create_label_job.get_shipment_repository"
+        ) as get_repo:
+            get_repo.return_value.get = AsyncMock(return_value=shipment)
+            assert await _label_already_created(session, shipment.id) is True
+
+    async def test_returns_false_when_tracking_number_is_none(self):
+        session = AsyncMock()
+        shipment = _make_shipment()
+        shipment.tracking_number = None
+        with patch(
+            "app.services.fulfillment.jobs.create_label_job.get_shipment_repository"
+        ) as get_repo:
+            get_repo.return_value.get = AsyncMock(return_value=shipment)
+            assert await _label_already_created(session, shipment.id) is False
+
+    async def test_returns_false_when_tracking_number_is_empty_string(self):
+        session = AsyncMock()
+        shipment = _make_shipment()
+        shipment.tracking_number = ""
+        with patch(
+            "app.services.fulfillment.jobs.create_label_job.get_shipment_repository"
+        ) as get_repo:
+            get_repo.return_value.get = AsyncMock(return_value=shipment)
+            assert await _label_already_created(session, shipment.id) is False
+
+    async def test_returns_false_when_shipment_row_missing(self):
+        session = AsyncMock()
+        with patch(
+            "app.services.fulfillment.jobs.create_label_job.get_shipment_repository"
+        ) as get_repo:
+            get_repo.return_value.get = AsyncMock(return_value=None)
+            assert await _label_already_created(session, uuid4()) is False
+
+
+class TestCreateLabelSkipsWhenAlreadyLabelled:
+    """
+    The end-to-end guard: a second delivery of the same outbox event must
+    not reach the carrier adapter, because that would bill a second label.
+    """
+
+    @staticmethod
+    def _ctx_and_payload(tracking_number):
+        shipment = _make_shipment()
+        shipment.tracking_number = tracking_number
+        event_id, order_id = uuid4(), uuid4()
+        payload = json.dumps(
+            {
+                "shipment_id": str(shipment.id),
+                "order_id": str(order_id),
+                "label_format": "pdf",
+            }
+        )
+        adapter = AsyncMock()
+        session_factory = MagicMock()
+        session = AsyncMock()
+        # session.begin() is a sync call returning an async context manager,
+        # so it must be a MagicMock, not the AsyncMock default.
+        session.begin = MagicMock()
+        session.begin.return_value.__aenter__ = AsyncMock(return_value=None)
+        session.begin.return_value.__aexit__ = AsyncMock(return_value=False)
+        session_factory.return_value.__aenter__ = AsyncMock(return_value=session)
+        session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+        ctx = {
+            "session_factory": session_factory,
+            "carrier_adapters": {"dhl": adapter},
+            "storage_adapter": AsyncMock(),
+            "settings": MagicMock(storage_bucket_labels="labels"),
+        }
+        return ctx, adapter, shipment, event_id, payload
+
+    async def test_carrier_not_called_when_label_exists(self):
+        ctx, adapter, shipment, event_id, payload = self._ctx_and_payload("TRACK123")
+
+        with (
+            patch(
+                "app.services.fulfillment.jobs.create_label_job._load_outbox_payload",
+                AsyncMock(return_value=json.loads(payload)),
+            ),
+            patch(
+                "app.services.fulfillment.jobs.create_label_job._label_already_created",
+                AsyncMock(return_value=True),
+            ),
+            patch(
+                "app.services.fulfillment.jobs.create_label_job._mark_outbox_done",
+                AsyncMock(),
+            ) as mark_done,
+            patch(
+                "app.services.fulfillment.jobs.create_label_job.fetch_order_context",
+                AsyncMock(),
+            ) as fetch_ctx,
+        ):
+            await create_label(ctx, outbox_event_id=str(event_id))
+
+        adapter.create_label.assert_not_awaited()
+        fetch_ctx.assert_not_awaited()
+        mark_done.assert_awaited_once()
+
+    async def test_outbox_settled_so_event_is_not_retried(self):
+        ctx, adapter, shipment, event_id, payload = self._ctx_and_payload("TRACK123")
+
+        with (
+            patch(
+                "app.services.fulfillment.jobs.create_label_job._load_outbox_payload",
+                AsyncMock(return_value=json.loads(payload)),
+            ),
+            patch(
+                "app.services.fulfillment.jobs.create_label_job._label_already_created",
+                AsyncMock(return_value=True),
+            ),
+            patch(
+                "app.services.fulfillment.jobs.create_label_job._mark_outbox_done",
+                AsyncMock(),
+            ) as mark_done,
+        ):
+            await create_label(ctx, outbox_event_id=str(event_id))
+
+        assert mark_done.await_args.args[1] == event_id
+
+
+# ---------------------------------------------------------------------------
+# Outbox poll cadence — honours settings.outbox_poll_interval
+# ---------------------------------------------------------------------------
+
+
+class TestBuildOutboxCron:
+    """
+    The poller previously hard-coded a 60s cadence and ignored the
+    outbox_poll_interval setting entirely.
+    """
+
+    @staticmethod
+    def _cron_for(interval):
+        with patch(
+            "app.worker.get_settings",
+            return_value=MagicMock(outbox_poll_interval=interval),
+        ):
+            return _build_outbox_cron(poll_outbox)
+
+    def test_sub_minute_interval_sets_second_marks(self):
+        job = self._cron_for(30)
+        assert job.second == {0, 30}
+
+    def test_sub_minute_interval_leaves_minute_wildcard(self):
+        # None is ARQ's wildcard — "every minute".
+        assert self._cron_for(30).minute is None
+
+    def test_ten_second_interval_fires_six_times_a_minute(self):
+        assert self._cron_for(10).second == {0, 10, 20, 30, 40, 50}
+
+    def test_minute_scale_interval_sets_minute_marks(self):
+        job = self._cron_for(300)
+        assert job.minute == {0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}
+        assert job.second == 0
+
+    def test_hour_scale_interval_sets_hour_marks(self):
+        job = self._cron_for(7200)
+        assert job.hour == {0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22}
+        assert job.minute == 0
+
+    def test_daily_interval_is_clamped_to_stay_within_a_day(self):
+        # Must still fire rather than silently never running.
+        assert self._cron_for(86400).hour == {0, 23}
+
+    def test_zero_interval_does_not_crash(self):
+        assert self._cron_for(0).second is not None
+
+    def test_interval_change_changes_schedule(self):
+        assert self._cron_for(15).second != self._cron_for(30).second
+
+
+# ---------------------------------------------------------------------------
+# Outbox attempt ceiling — stops infinite re-enqueue of a broken event
+# ---------------------------------------------------------------------------
+
+
+def _make_outbox_event(attempts: int) -> MagicMock:
+    """Return a mock that behaves like an OutboxEventDB row."""
+    event = MagicMock()
+    event.id = uuid4()
+    event.event_type = CREATE_LABEL_EVENT
+    event.attempts = attempts
+    return event
+
+
+def _worker_ctx() -> dict:
+    """Build an ARQ context whose session_factory yields an AsyncMock session."""
+    session_factory = MagicMock()
+    session = AsyncMock()
+    session.begin = MagicMock()
+    session.begin.return_value.__aenter__ = AsyncMock(return_value=None)
+    session.begin.return_value.__aexit__ = AsyncMock(return_value=False)
+    session_factory.return_value.__aenter__ = AsyncMock(return_value=session)
+    session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+    return {
+        "session_factory": session_factory,
+        "redis": AsyncMock(),
+        "settings": MagicMock(outbox_max_attempts=5),
+    }
+
+
+class TestFailExhaustedOutboxEvent:
+    async def test_marks_event_failed_not_dead(self):
+        ctx = _worker_ctx()
+        event = _make_outbox_event(attempts=5)
+        with patch("app.worker.get_outbox_repository") as get_repo:
+            repo = get_repo.return_value
+            repo.mark_failed = AsyncMock()
+            repo.mark_dead = AsyncMock()
+            await _fail_exhausted_outbox_event(ctx, event, 5)
+
+        repo.mark_failed.assert_awaited_once_with(event.id)
+        repo.mark_dead.assert_not_awaited()
+
+    async def test_db_error_is_swallowed_so_poll_continues(self):
+        ctx = _worker_ctx()
+        event = _make_outbox_event(attempts=9)
+        with patch("app.worker.get_outbox_repository") as get_repo:
+            get_repo.return_value.mark_failed = AsyncMock(
+                side_effect=RuntimeError("db")
+            )
+            # Must not propagate — one bad row cannot abort the whole sweep.
+            await _fail_exhausted_outbox_event(ctx, event, 5)
+
+
+class TestPollOutboxAttemptCeiling:
+    @staticmethod
+    async def _run(pending, max_attempts=5):
+        ctx = _worker_ctx()
+        ctx["settings"].outbox_max_attempts = max_attempts
+        with (
+            patch("app.worker.get_outbox_repository") as get_repo,
+            patch("app.worker._enqueue_single_outbox_event", AsyncMock()) as enqueue,
+            patch("app.worker._fail_exhausted_outbox_event", AsyncMock()) as fail,
+        ):
+            get_repo.return_value.list_pending = AsyncMock(return_value=pending)
+            await poll_outbox(ctx)
+        return enqueue, fail
+
+    async def test_event_under_ceiling_is_enqueued(self):
+        event = _make_outbox_event(attempts=2)
+        enqueue, fail = await self._run([event])
+        enqueue.assert_awaited_once()
+        fail.assert_not_awaited()
+
+    async def test_event_at_ceiling_is_failed_not_enqueued(self):
+        event = _make_outbox_event(attempts=5)
+        enqueue, fail = await self._run([event])
+        enqueue.assert_not_awaited()
+        fail.assert_awaited_once()
+
+    async def test_event_over_ceiling_is_failed(self):
+        event = _make_outbox_event(attempts=99)
+        enqueue, fail = await self._run([event])
+        enqueue.assert_not_awaited()
+        fail.assert_awaited_once()
+
+    async def test_none_attempts_is_treated_as_zero(self):
+        event = _make_outbox_event(attempts=None)
+        enqueue, fail = await self._run([event])
+        enqueue.assert_awaited_once()
+        fail.assert_not_awaited()
+
+    async def test_healthy_and_exhausted_events_are_split(self):
+        good, bad = _make_outbox_event(0), _make_outbox_event(5)
+        enqueue, fail = await self._run([good, bad])
+        assert enqueue.await_count == 1
+        assert fail.await_count == 1
+
+    async def test_empty_pending_list_does_nothing(self):
+        enqueue, fail = await self._run([])
+        enqueue.assert_not_awaited()
+        fail.assert_not_awaited()
+
+    async def test_ceiling_respects_configured_value(self):
+        event = _make_outbox_event(attempts=3)
+        enqueue, fail = await self._run([event], max_attempts=3)
+        fail.assert_awaited_once()
+        enqueue.assert_not_awaited()

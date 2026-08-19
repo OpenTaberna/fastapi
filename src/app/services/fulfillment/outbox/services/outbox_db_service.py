@@ -8,7 +8,9 @@ Extends BaseRepository with two domain-specific queries:
                     (used by the outbox poller in the ARQ worker).
     - mark_enqueued: atomically set status=ENQUEUED and record the ARQ job ID.
     - mark_done:     set status=DONE after the ARQ job completes successfully.
+    - mark_failed:   set status=FAILED once the poller gave up enqueuing.
     - mark_dead:     set status=DEAD after exhausting all retries.
+    - list_failed:   fetch FAILED rows so maintainers can inspect them.
 """
 
 import json
@@ -86,6 +88,43 @@ class OutboxRepository(BaseRepository[OutboxEventDB]):
             Updated OutboxEventDB row.
         """
         return await self.update(event_id, status=OutboxStatus.DONE.value)
+
+    async def mark_failed(self, event_id: UUID) -> OutboxEventDB:
+        """
+        Mark an event FAILED after the poller exhausted its enqueue attempts.
+
+        Distinct from mark_dead: the event never reached ARQ at all, so no
+        job ever ran.  Terminal — the poller skips FAILED rows on later
+        sweeps, which is what stops the retry loop.
+
+        Args:
+            event_id: UUID of the outbox event row to fail.
+
+        Returns:
+            Updated OutboxEventDB row.
+        """
+        return await self.update(event_id, status=OutboxStatus.FAILED.value)
+
+    async def list_failed(self, limit: int = 100) -> list[OutboxEventDB]:
+        """
+        Fetch FAILED outbox events ordered oldest-first.
+
+        Gives maintainers the filtered list of events that never made it onto
+        the queue, so they can investigate and requeue them by hand.
+
+        Args:
+            limit: Maximum number of rows to return.
+
+        Returns:
+            List of OutboxEventDB rows with status=FAILED, oldest first.
+        """
+        result = await self.session.execute(
+            select(OutboxEventDB)
+            .where(OutboxEventDB.status == OutboxStatus.FAILED.value)
+            .order_by(OutboxEventDB.created_at.asc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
 
     async def mark_dead(self, event_id: UUID) -> OutboxEventDB:
         """

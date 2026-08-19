@@ -5,6 +5,9 @@ Executes asynchronously in the ARQ worker process.
 
 Lifecycle:
     1. Triggered by the outbox poller via arq.ArqRedis.enqueue_job("create_label", ...).
+    1a. Idempotency guard: if the shipment already has a tracking number the
+        carrier was already charged, so the job settles the outbox row and
+        returns without calling the carrier again.
     2. Fetches the shipment and associated order/customer/address from the DB.
     3. Selects the correct CarrierAdapter from the ARQ context dict.
     4. Calls adapter.create_label() to obtain tracking number + label bytes.
@@ -106,6 +109,28 @@ async def create_label(
         },
     )
 
+    # Idempotency guard — MUST stay before the carrier call.
+    #
+    # At-least-once delivery means this job can run twice for one shipment:
+    # a worker crash between enqueue_job() and mark_enqueued() leaves the
+    # outbox row PENDING, so the next poll re-enqueues it.  Calling the
+    # carrier again would buy a second label for the same parcel and bill
+    # the account twice.  A shipment that already carries a tracking number
+    # is already labelled, so settle the outbox row and stop here.
+    async with session_factory() as session:
+        if await _label_already_created(session, shipment_id):
+            async with session.begin():
+                await _mark_outbox_done(session, event_uuid)
+            logger.warning(
+                "create_label skipped — shipment already has a label",
+                extra={
+                    "outbox_event_id": outbox_event_id,
+                    "shipment_id": str(shipment_id),
+                    "order_id": str(order_id),
+                },
+            )
+            return
+
     async with session_factory() as session:
         order_ctx: OrderContext = await fetch_order_context(order_id, session)
 
@@ -177,6 +202,34 @@ async def _load_outbox_payload(session: AsyncSession, event_id: UUID) -> dict:
     outbox_repo = get_outbox_repository(session)
     event = await outbox_repo.get(event_id)
     return json.loads(event.payload)
+
+
+async def _label_already_created(session: AsyncSession, shipment_id: UUID) -> bool:
+    """
+    Check whether a shipment already has a carrier label.
+
+    Read fresh from the DB rather than from a previously loaded context, so
+    a label written by a concurrent or earlier run of this job is seen.
+
+    A non-empty tracking_number is the authoritative signal: it is only ever
+    written by _persist_label_result after the carrier call succeeded, so its
+    presence proves the carrier was already charged for this shipment.
+    Status is deliberately not used on its own — it advances past
+    LABEL_CREATED as the parcel moves, and a missing shipment row is treated
+    as "not created" so the normal path raises a meaningful error.
+
+    Args:
+        session:     Active AsyncSession.
+        shipment_id: UUID of the shipment to check.
+
+    Returns:
+        True if the shipment already carries a tracking number.
+    """
+    shipment_repo = get_shipment_repository(session)
+    shipment = await shipment_repo.get(shipment_id)
+    if shipment is None:
+        return False
+    return bool(shipment.tracking_number)
 
 
 def _extract_carrier_args(ctx: OrderContext, shipment_id: UUID) -> dict:

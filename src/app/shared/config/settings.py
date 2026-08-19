@@ -244,6 +244,13 @@ class Settings(BaseSettings):
         default=30,
         description="Seconds between outbox table sweeps for un-enqueued events",
     )
+    outbox_max_attempts: int = Field(
+        default=5,
+        description=(
+            "Maximum times the poller tries to enqueue one outbox event "
+            "before marking it FAILED for manual review"
+        ),
+    )
 
     @field_validator("secret_key")
     @classmethod

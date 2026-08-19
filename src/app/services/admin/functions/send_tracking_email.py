@@ -9,9 +9,16 @@ SMTP credentials are read from Settings (smtp_host, smtp_port, smtp_user,
 smtp_password, email_from). When smtp_host is empty the function logs a
 warning and returns without raising — this makes the endpoint work in
 development environments without a live SMTP server.
+
+Escaping:
+    The HTML part interpolates the customer name, carrier and tracking
+    number, all of which can carry user-supplied text.  They are escaped
+    with _esc() so a crafted name cannot break out of the markup in the
+    recipient's mail client.  The plain-text part needs no escaping.
 """
 
 import asyncio
+import html
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -21,6 +28,19 @@ from app.shared.config.settings import Settings
 from app.shared.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _esc(value: object) -> str:
+    """
+    Escape a value for safe interpolation into the HTML mail body.
+
+    Args:
+        value: Any value destined for the HTML part.
+
+    Returns:
+        HTML-escaped string with &, <, >, " and ' neutralised.
+    """
+    return html.escape(str(value), quote=True)
 
 
 # ---------------------------------------------------------------------------
@@ -220,7 +240,9 @@ def _build_html(
     Returns:
         HTML email body as a string.
     """
-    tracking_display = tracking_number if tracking_number else "Not yet available"
+    tracking_display = _esc(tracking_number) if tracking_number else "Not yet available"
+    safe_name = _esc(customer_name)
+    safe_carrier = _esc(carrier)
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -229,7 +251,7 @@ def _build_html(
 </head>
 <body style="font-family: Arial, sans-serif; font-size: 14px; color: #222; max-width: 600px; margin: 0 auto; padding: 20px;">
   <h2 style="color: #2c7a4b;">Your order is on its way!</h2>
-  <p>Hi <strong>{customer_name}</strong>,</p>
+  <p>Hi <strong>{safe_name}</strong>,</p>
   <p>Great news — your order has been shipped!</p>
   <table style="border-collapse: collapse; margin: 16px 0; width: 100%;">
     <tr>
@@ -238,7 +260,7 @@ def _build_html(
     </tr>
     <tr>
       <td style="padding: 8px 12px; background: #f8f8f8; font-weight: bold; border: 1px solid #ddd;">Carrier</td>
-      <td style="padding: 8px 12px; border: 1px solid #ddd;">{carrier}</td>
+      <td style="padding: 8px 12px; border: 1px solid #ddd;">{safe_carrier}</td>
     </tr>
     <tr>
       <td style="padding: 8px 12px; background: #f8f8f8; font-weight: bold; border: 1px solid #ddd;">Tracking Number</td>

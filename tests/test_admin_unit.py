@@ -664,3 +664,128 @@ class TestSendTrackingEmail:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ---------------------------------------------------------------------------
+# HTML escaping — user-controlled text must not break out of the markup
+# ---------------------------------------------------------------------------
+
+# A string that closes the surrounding cell/table and injects a script tag.
+# If any of these documents interpolate it unescaped, "<script>" appears
+# verbatim in the output and executes in the admin's or customer's browser.
+XSS = "</td></tr></table><script>alert('xss')</script><table><tr><td>"
+
+
+class TestPackingSlipEscapesUserInput:
+    @staticmethod
+    def _render(**overrides):
+        order = _make_order(status=OrderStatus.PAID)
+        item = _make_order_item(order.id, sku=overrides.get("sku", "SKU-1"))
+        customer = _make_customer()
+        customer.first_name = overrides.get("first_name", "Jane")
+        customer.last_name = overrides.get("last_name", "Doe")
+        customer.email = overrides.get("email", "a@b.c")
+        address = _make_address(customer.id)
+        for field in ("street", "city", "zip_code", "country"):
+            if field in overrides:
+                setattr(address, field, overrides[field])
+        shipment = _make_shipment(
+            order.id, tracking_number=overrides.get("tracking", "DE1")
+        )
+        if "carrier" in overrides:
+            shipment.carrier = overrides["carrier"]
+        return render_packing_slip(order, [item], customer, address, shipment)
+
+    def test_customer_first_name_is_escaped(self):
+        html = self._render(first_name=XSS)
+        assert "<script>" not in html
+        assert "&lt;script&gt;" in html
+
+    def test_customer_last_name_is_escaped(self):
+        assert "<script>" not in self._render(last_name=XSS)
+
+    def test_customer_email_is_escaped(self):
+        assert "<script>" not in self._render(email=XSS)
+
+    def test_street_is_escaped(self):
+        assert "<script>" not in self._render(street=XSS)
+
+    def test_city_is_escaped(self):
+        assert "<script>" not in self._render(city=XSS)
+
+    def test_zip_code_is_escaped(self):
+        assert "<script>" not in self._render(zip_code=XSS)
+
+    def test_country_is_escaped(self):
+        assert "<script>" not in self._render(country=XSS)
+
+    def test_sku_is_escaped(self):
+        assert "<script>" not in self._render(sku=XSS)
+
+    def test_tracking_number_is_escaped(self):
+        assert "<script>" not in self._render(tracking=XSS)
+
+    def test_carrier_is_escaped(self):
+        assert "<script>" not in self._render(carrier=XSS)
+
+    def test_quotes_in_name_cannot_break_an_attribute(self):
+        html = self._render(first_name='" onload="alert(1)')
+        assert 'onload="alert(1)' not in html
+
+    def test_legitimate_content_still_renders(self):
+        html = self._render(first_name="Jane", sku="SKU-ABC")
+        assert "Jane" in html
+        assert "SKU-ABC" in html
+
+    def test_ampersand_in_name_is_encoded_once(self):
+        html = self._render(first_name="Ben & Jerry")
+        assert "Ben &amp; Jerry" in html
+        assert "Ben &amp;amp; Jerry" not in html
+
+
+class TestPickListHtmlEscapesUserInput:
+    def test_sku_is_escaped(self):
+        pick_list = PickListResponse(
+            items=[PickListItem(sku=XSS, total_quantity=1, order_count=1)],
+            order_ids=[uuid4()],
+            generated_at=datetime.now(UTC),
+        )
+        html = render_pick_list_html(pick_list)
+        assert "<script>" not in html
+        assert "&lt;script&gt;" in html
+
+    def test_legitimate_sku_still_renders(self):
+        pick_list = PickListResponse(
+            items=[PickListItem(sku="SKU-XYZ", total_quantity=3, order_count=2)],
+            order_ids=[uuid4()],
+            generated_at=datetime.now(UTC),
+        )
+        assert "SKU-XYZ" in render_pick_list_html(pick_list)
+
+
+class TestTrackingEmailEscapesUserInput:
+    def test_customer_name_is_escaped(self):
+        html = _build_html(XSS, uuid4(), "TRACK1", "dhl")
+        assert "<script>" not in html
+        assert "&lt;script&gt;" in html
+
+    def test_tracking_number_is_escaped(self):
+        assert "<script>" not in _build_html("Jane", uuid4(), XSS, "dhl")
+
+    def test_carrier_is_escaped(self):
+        assert "<script>" not in _build_html("Jane", uuid4(), "TRACK1", XSS)
+
+    def test_legitimate_content_still_renders(self):
+        html = _build_html("Jane Doe", uuid4(), "TRACK1", "dhl")
+        assert "Jane Doe" in html
+        assert "TRACK1" in html
+
+    def test_missing_tracking_number_shows_placeholder(self):
+        assert "Not yet available" in _build_html("Jane", uuid4(), None, "dhl")
+
+    def test_plain_text_part_is_not_html_escaped(self):
+        # The text/plain part is never parsed as markup, so escaping there
+        # would corrupt legitimate names like "Ben & Jerry".
+        text = _build_plain_text("Ben & Jerry", uuid4(), "TRACK1", "dhl")
+        assert "Ben & Jerry" in text
+        assert "&amp;" not in text

@@ -10,8 +10,18 @@ Both functions return raw HTML strings (no file I/O). The calling router
 streams the result directly to the browser with Content-Type: text/html.
 All formatting is inline CSS so the documents print correctly without an
 external stylesheet.
+
+Escaping:
+    Every value that originates from user input — customer names, e-mail
+    addresses, address lines, SKUs, carrier and tracking strings — is passed
+    through _esc() before interpolation.  Without it a customer could store
+    "</td><script>..." in their address and have it execute in the browser of
+    the admin who prints the packing slip.  Only values the application
+    itself controls (UUIDs, integers, formatted decimals, timestamps) are
+    interpolated directly.
 """
 
+import html
 from collections import defaultdict
 from datetime import UTC, datetime
 from uuid import UUID
@@ -24,6 +34,24 @@ from app.shared.logger import get_logger
 from ..models.admin_models import PickListItem, PickListResponse
 
 logger = get_logger(__name__)
+
+# Placeholder rendered when an optional field has no value
+_EMPTY = "\u2014"
+
+
+def _esc(value: object) -> str:
+    """
+    Escape a value for safe interpolation into an HTML document.
+
+    Args:
+        value: Any value destined for the HTML output. None renders as a dash.
+
+    Returns:
+        HTML-escaped string with &, <, >, " and ' neutralised.
+    """
+    if value is None:
+        return _EMPTY
+    return html.escape(str(value), quote=True)
 
 
 # ---------------------------------------------------------------------------
@@ -59,27 +87,33 @@ def render_packing_slip(
         "Rendering packing slip",
         extra={"order_id": str(order.id), "item_count": len(items)},
     )
-    customer_name = f"{customer.first_name} {customer.last_name}" if customer else "—"
-    customer_email = customer.email if customer else "—"
+    customer_name = (
+        _esc(f"{customer.first_name} {customer.last_name}") if customer else _EMPTY
+    )
+    customer_email = _esc(customer.email) if customer else _EMPTY
 
     address_lines = _format_address(shipping_address)
     tracking = (
-        shipment.tracking_number if shipment and shipment.tracking_number else "—"
+        _esc(shipment.tracking_number)
+        if shipment and shipment.tracking_number
+        else _EMPTY
     )
-    carrier = shipment.carrier if shipment else "—"
+    carrier = _esc(shipment.carrier) if shipment else _EMPTY
+    currency = _esc(order.currency)
+    status = _esc(order.status)
     generated = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
 
     rows = "\n".join(
         f"<tr>"
-        f"<td>{item.sku}</td>"
+        f"<td>{_esc(item.sku)}</td>"
         f"<td style='text-align:center'>{item.quantity}</td>"
-        f"<td style='text-align:right'>{item.unit_price / 100:.2f} {order.currency}</td>"
-        f"<td style='text-align:right'>{(item.quantity * item.unit_price) / 100:.2f} {order.currency}</td>"
+        f"<td style='text-align:right'>{item.unit_price / 100:.2f} {currency}</td>"
+        f"<td style='text-align:right'>{(item.quantity * item.unit_price) / 100:.2f} {currency}</td>"
         f"</tr>"
         for item in items
     )
 
-    total_formatted = f"{order.total_amount / 100:.2f} {order.currency}"
+    total_formatted = f"{order.total_amount / 100:.2f} {currency}"
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -107,7 +141,7 @@ def render_packing_slip(
     <div>
       <h2>Order</h2>
       <p><strong>ID:</strong> {order.id}</p>
-      <p><strong>Status:</strong> {order.status}</p>
+      <p><strong>Status:</strong> {status}</p>
       <p><strong>Date:</strong> {order.created_at.strftime("%Y-%m-%d") if order.created_at else "—"}</p>
       <p><strong>Carrier:</strong> {carrier}</p>
       <p><strong>Tracking:</strong> {tracking}</p>
@@ -212,7 +246,7 @@ def render_pick_list_html(pick_list: PickListResponse) -> str:
 
     rows = "\n".join(
         f"<tr>"
-        f"<td>{item.sku}</td>"
+        f"<td>{_esc(item.sku)}</td>"
         f"<td style='text-align:center'>{item.total_quantity}</td>"
         f"<td style='text-align:center'>{item.order_count}</td>"
         f"<td><input type='checkbox' /></td>"
@@ -291,9 +325,9 @@ def _format_address(address: AddressDB | None) -> str:
         HTML paragraph tags with address lines, or a dash if address is None.
     """
     if address is None:
-        return "<p>—</p>"
+        return f"<p>{_EMPTY}</p>"
     return (
-        f"<p>{address.street}</p>"
-        f"<p>{address.zip_code} {address.city}</p>"
-        f"<p>{address.country}</p>"
+        f"<p>{_esc(address.street)}</p>"
+        f"<p>{_esc(address.zip_code)} {_esc(address.city)}</p>"
+        f"<p>{_esc(address.country)}</p>"
     )

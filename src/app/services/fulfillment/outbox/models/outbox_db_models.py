@@ -42,12 +42,22 @@ class OutboxStatus(str, Enum):
     PENDING  → written in the business transaction; not yet handed to ARQ.
     ENQUEUED → ARQ job created in Redis; waiting to execute.
     DONE     → ARQ job completed successfully.
-    DEAD     → ARQ job exhausted all retries; requires manual investigation.
+    FAILED   → the poller could not enqueue the event within
+               settings.outbox_max_attempts tries.  The event never reached
+               ARQ, so no job ran.  Maintainers can list these and retry.
+    DEAD     → the ARQ job ran but exhausted all its retries; requires manual
+               investigation.
+
+    FAILED and DEAD are both terminal, but they mean different things:
+    FAILED never made it onto the queue, DEAD made it and then gave up.
+    Keeping them apart lets maintainers filter for the two failure classes
+    separately instead of guessing which half of the pipeline broke.
     """
 
     PENDING = "pending"
     ENQUEUED = "enqueued"
     DONE = "done"
+    FAILED = "failed"
     DEAD = "dead"
 
 
@@ -93,7 +103,7 @@ class OutboxEventDB(Base, TimestampMixin):
         default=OutboxStatus.PENDING.value,
         server_default=text("'pending'"),
         index=True,
-        doc="Current lifecycle state: pending | enqueued | done | dead",
+        doc="Current lifecycle state: pending | enqueued | done | failed | dead",
     )
 
     arq_job_id: Mapped[str | None] = mapped_column(

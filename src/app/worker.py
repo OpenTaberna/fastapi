@@ -24,6 +24,11 @@ Dead-letter hook:
     the failure at ERROR level and marks the outbox event row as DEAD so it
     is visible in the DB for manual investigation.
 
+Enqueue-failure ceiling:
+    An event the poller cannot hand to ARQ within settings.outbox_max_attempts
+    sweeps is marked FAILED and skipped from then on.  FAILED means the event
+    never reached the queue; DEAD means the job ran and gave up.
+
 Retry / Backoff:
     ARQ retries up to WorkerSettings.max_tries times.  The default backoff
     is exponential (2^attempt seconds) and is handled entirely by ARQ.
@@ -33,6 +38,7 @@ from uuid import UUID
 
 from arq import cron
 from arq.connections import RedisSettings
+from arq.cron import CronJob
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import app.db_models  # noqa: F401 — ensures all ORM models are registered
@@ -138,6 +144,8 @@ async def poll_outbox(ctx: dict) -> None:
         None
     """
     session_factory = ctx["session_factory"]
+    settings = ctx.get("settings") or get_settings()
+    max_attempts: int = settings.outbox_max_attempts
 
     async with session_factory() as session:
         outbox_repo = get_outbox_repository(session)
@@ -149,7 +157,55 @@ async def poll_outbox(ctx: dict) -> None:
     logger.info("Outbox poll found pending events", extra={"count": len(pending)})
 
     for event in pending:
+        # An event that has burned through its attempts is terminal.  Marking
+        # it FAILED takes it out of list_pending, which is what stops the
+        # poller from retrying the same broken row on every sweep forever.
+        if (event.attempts or 0) >= max_attempts:
+            await _fail_exhausted_outbox_event(ctx, event, max_attempts)
+            continue
+
         await _enqueue_single_outbox_event(ctx, event)
+
+
+async def _fail_exhausted_outbox_event(ctx: dict, event, max_attempts: int) -> None:
+    """
+    Mark an outbox event FAILED after it exhausted its enqueue attempts.
+
+    The event never reached ARQ, so no job ever ran for it — this is a
+    different failure from a dead-lettered job (see OutboxStatus.DEAD).
+    Maintainers find these via OutboxRepository.list_failed().
+
+    Args:
+        ctx:          ARQ worker context dict.
+        event:        OutboxEventDB row that ran out of attempts.
+        max_attempts: The configured ceiling, logged for context.
+
+    Returns:
+        None
+    """
+    session_factory = ctx["session_factory"]
+
+    logger.error(
+        "Outbox event exhausted enqueue attempts — marking FAILED",
+        extra={
+            "event_id": str(event.id),
+            "event_type": event.event_type,
+            "attempts": event.attempts,
+            "max_attempts": max_attempts,
+        },
+    )
+
+    try:
+        async with session_factory() as session:
+            async with session.begin():
+                outbox_repo = get_outbox_repository(session)
+                await outbox_repo.mark_failed(event.id)
+    except Exception as exc:
+        logger.error(
+            "Failed to mark outbox event as FAILED",
+            extra={"event_id": str(event.id), "error": str(exc)},
+            exc_info=True,
+        )
 
 
 async def _enqueue_single_outbox_event(ctx: dict, event) -> None:
@@ -261,6 +317,43 @@ async def on_job_abort(ctx: dict, job_id: str, function: str, args, kwargs) -> N
 # ---------------------------------------------------------------------------
 
 
+def _build_outbox_cron(coroutine) -> CronJob:
+    """
+    Build the outbox poller CronJob honouring settings.outbox_poll_interval.
+
+    ARQ schedules cron jobs by matching calendar fields, not by sleeping for
+    an interval, so the configured seconds value is translated into the set
+    of second-, minute-, or hour-marks that reproduce that cadence:
+
+        interval <    60  → seconds {0, n, 2n, ...} of every minute
+        interval <  3600  → minutes {0, m, 2m, ...} on second 0, m = n // 60
+        interval >= 3600  → hours   {0, h, 2h, ...} at 00:00, h = n // 3600
+
+    A `None` field is a wildcard in ARQ, so the unset coarser fields mean
+    "every minute" / "every hour" respectively.  Intervals that do not divide
+    their unit evenly leave a shorter final gap before the top of the next
+    unit; the cadence stays bounded by the configured value, which is what
+    the setting promises.  An interval of a day or more is clamped to 23h so
+    the job still fires at least once per day rather than silently never.
+
+    Args:
+        coroutine: The poller coroutine to schedule.
+
+    Returns:
+        A CronJob firing at the configured cadence.
+    """
+    interval = max(1, get_settings().outbox_poll_interval)
+
+    if interval < 60:
+        return cron(coroutine, second={*range(0, 60, interval)})
+
+    if interval < 3600:
+        return cron(coroutine, minute={*range(0, 60, interval // 60)}, second=0)
+
+    step_hours = min(interval // 3600, 23)
+    return cron(coroutine, hour={*range(0, 24, step_hours)}, minute=0, second=0)
+
+
 def _build_redis_settings() -> RedisSettings:
     """
     Build ARQ RedisSettings from the application Settings.
@@ -309,13 +402,7 @@ class WorkerSettings:
 
     functions = [create_label]
 
-    @staticmethod
-    def _poll_interval() -> int:
-        return get_settings().outbox_poll_interval
-
-    cron_jobs = [
-        cron(poll_outbox, minute={*range(0, 60)}, second=0),
-    ]
+    cron_jobs = [_build_outbox_cron(poll_outbox)]
 
     on_startup = startup
     on_shutdown = shutdown
