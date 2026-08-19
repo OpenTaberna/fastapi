@@ -214,6 +214,8 @@ caller claim any identity.
 | `storage_access_key` | str | `minioadmin` | Access key |
 | `storage_secret_key` | str | `minioadmin` | Secret key |
 | `storage_bucket_labels` | str | `labels` | Bucket holding carrier labels |
+| `storage_bucket_items` | str | `item-images` | Bucket holding product images |
+| `storage_max_image_bytes` | int | `5242880` | Largest product image accepted (5 MB) |
 | `storage_region` | str | `us-east-1` | Region name |
 
 ### DHL (Carrier Adapter)

@@ -7,9 +7,12 @@ Provides endpoints for creating, reading, updating, and deleting items.
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.admin.dependencies import require_admin
+from app.shared.config import get_settings
 from app.shared.database.session import get_session_dependency
 from app.shared.exceptions import entity_not_found
 from app.shared.responses import PaginatedResponse, PageInfo
@@ -24,6 +27,13 @@ from ..responses.item_docs import (
     DELETE_ITEM_RESPONSES,
 )
 from ..services import get_item_repository
+from ..functions.item_images import (
+    assert_within_size_limit,
+    detect_image_format,
+    image_key,
+    mime_type,
+    public_image_url,
+)
 from ..functions import (
     db_to_response,
     check_duplicate_field,
@@ -325,3 +335,164 @@ async def delete_item(
     # straight back can otherwise get a 404 (issue #26).
     await session.commit()
     logger.info("Item deleted", extra={"uuid": str(item_uuid)})
+
+
+# ---------------------------------------------------------------------------
+# Product images
+# ---------------------------------------------------------------------------
+
+
+def _storage_adapter():
+    """
+    Build a storage adapter from application settings.
+
+    Returns:
+        Configured MinioStorageAdapter.
+    """
+    from app.shared.storage.minio_adapter import build_minio_adapter
+
+    settings = get_settings()
+    return build_minio_adapter(
+        endpoint_url=settings.storage_endpoint_url,
+        access_key=settings.storage_access_key,
+        secret_key=settings.storage_secret_key,
+        region=settings.storage_region,
+    )
+
+
+@router.put(
+    "/{item_uuid}/image",
+    response_model=ItemResponse,
+    summary="Upload the product image (admin)",
+    description=(
+        "Store the product image in the object store and point the item at it. "
+        "Accepts JPEG, PNG, GIF and WebP. One image per item — uploading again "
+        "replaces the previous file rather than leaving an orphan behind."
+    ),
+    dependencies=[Depends(require_admin)],
+)
+async def upload_item_image(
+    item_uuid: UUID,
+    file: UploadFile = File(..., description="Image file"),
+    session: AsyncSession = Depends(get_session_dependency),
+) -> ItemResponse:
+    """
+    Attach an image to an item.
+
+    Admin-only, unlike the rest of this router: an unauthenticated upload
+    endpoint lets anyone fill the object store, and lets them serve chosen
+    bytes from our own origin.
+
+    Args:
+        item_uuid: Item to attach the image to.
+        file:      Uploaded image.
+        session:   Database session.
+
+    Returns:
+        The updated item, with media.main_image set.
+
+    Raises:
+        NotFoundError (404):     If the item does not exist.
+        BusinessRuleError (400): If the file is too large or is not an image.
+        StorageError (502):      If the object store rejects the upload.
+    """
+    settings = get_settings()
+    repo = get_item_repository(session)
+
+    item = await repo.get(item_uuid)
+    if not item:
+        raise entity_not_found("Item", item_uuid)
+
+    data = await file.read()
+    assert_within_size_limit(data, settings.storage_max_image_bytes)
+    # Checked against the bytes rather than the declared Content-Type, which
+    # the client controls.
+    image_format = detect_image_format(data)
+
+    storage = _storage_adapter()
+    bucket = settings.storage_bucket_items
+    await storage.ensure_bucket(bucket)
+    key = image_key(item_uuid, image_format)
+    await storage.upload(
+        bucket=bucket, key=key, data=data, content_type=mime_type(image_format)
+    )
+
+    media = dict(item.media or {})
+    media["main_image"] = public_image_url(item_uuid)
+    updated = await repo.update(item_uuid, media=media)
+    await session.commit()
+
+    logger.info(
+        "Product image stored",
+        extra={
+            "uuid": str(item_uuid),
+            "format": image_format,
+            "bytes": len(data),
+            "key": key,
+        },
+    )
+    return db_to_response(updated)
+
+
+@router.get(
+    "/{item_uuid}/image",
+    summary="Get the product image",
+    description=(
+        "Return the product image bytes. Public, because the storefront shows "
+        "it to shoppers who are not signed in."
+    ),
+    response_class=Response,
+    responses={
+        200: {"content": {"image/*": {}}, "description": "The image"},
+        404: {"description": "The item has no image"},
+    },
+)
+async def get_item_image(
+    item_uuid: UUID,
+    session: AsyncSession = Depends(get_session_dependency),
+) -> Response:
+    """
+    Serve an item's image.
+
+    Proxied through the API rather than exposing MinIO, so the object store
+    stays private and can be moved without invalidating stored URLs.
+
+    Args:
+        item_uuid: Item whose image is wanted.
+        session:   Database session.
+
+    Returns:
+        The image bytes with its content type.
+
+    Raises:
+        NotFoundError (404): If the item or its image does not exist.
+    """
+    settings = get_settings()
+    repo = get_item_repository(session)
+
+    item = await repo.get(item_uuid)
+    if not item:
+        raise entity_not_found("Item", item_uuid)
+
+    media = item.media or {}
+    if not media.get("main_image"):
+        raise entity_not_found("Item image", item_uuid)
+
+    storage = _storage_adapter()
+    bucket = settings.storage_bucket_items
+
+    # The stored URL does not carry the format, so try each extension. Cheap,
+    # and it avoids a second column that could drift from the object store.
+    for image_format in ("jpeg", "png", "gif", "webp"):
+        key = image_key(item_uuid, image_format)
+        try:
+            data = await storage.download(bucket=bucket, key=key)
+        except Exception:
+            continue
+        return Response(
+            content=data,
+            media_type=mime_type(image_format),
+            headers={"Cache-Control": "public, max-age=60"},
+        )
+
+    raise entity_not_found("Item image", item_uuid)
