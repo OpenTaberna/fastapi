@@ -110,6 +110,25 @@ Both exist for development only.
 `testuser2` exists so tests can prove one customer cannot reach another's
 orders, addresses or returns.
 
+## Reading it off the API documentation
+
+`http://localhost:8000/docs` marks every operation that needs a token with a
+padlock. The unmarked ones — the catalogue reads, the health probes and the
+Stripe webhook — are deliberately public.
+
+The padlock says "a token is required", not "you are an admin". Customer
+endpoints such as `/v1/customers/me` and `/v1/orders` carry one too. Which
+padlocked routes additionally demand the `admin` role is listed under
+[What the API enforces](#what-the-api-enforces); the schema cannot express it,
+because the role lives in the token rather than in an OAuth scope.
+
+**Authorize** logs in against Keycloak with the authorization-code flow and
+PKCE, using the `opentaberna-admin-ui` client so that an admin can exercise the
+back-office routes from the page. That is also why
+`http://localhost:8000/docs/oauth2-redirect` is a registered redirect URI on
+that client — registered as an exact path, not a wildcard, since the API host
+serves more than the documentation.
+
 ## Getting a token by hand
 
 ```bash

@@ -20,7 +20,6 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 from app.authorize import token as token_mod
 from app.authorize.dependencies import (
-    bearer_token,
     get_keycloak_id,
     get_optional_principal,
     require_admin,
@@ -72,11 +71,6 @@ def _patched_decode(tok: str):
     client.get_signing_key_from_jwt.return_value = _FakeSigningKey()
     with patch.object(token_mod, "_jwk_client", return_value=client):
         return decode_token(tok)
-
-
-class _Req:
-    def __init__(self, headers=None):
-        self.headers = headers or {}
 
 
 # ---------------------------------------------------------------------------
@@ -159,21 +153,64 @@ class TestPrincipalFromClaims:
         assert p.roles == frozenset()
 
 
-class TestBearerToken:
-    def test_extracts_the_token(self):
-        assert bearer_token(_Req({"Authorization": "Bearer abc"})) == "abc"
+class TestOpenApiSecurity:
+    """
+    The published schema must say which operations need a token.
 
-    def test_is_case_insensitive_on_the_scheme(self):
-        assert bearer_token(_Req({"Authorization": "bearer abc"})) == "abc"
+    Enforcement that is invisible in the documentation gets rediscovered by
+    trial and error, and a reader cannot tell a route that is deliberately
+    public from one that was left unprotected by accident.
+    """
 
-    def test_none_without_a_header(self):
-        assert bearer_token(_Req()) is None
+    @staticmethod
+    def _spec():
+        from app.main import app
 
-    def test_none_for_a_non_bearer_scheme(self):
-        assert bearer_token(_Req({"Authorization": "Basic abc"})) is None
+        return app.openapi()
 
-    def test_none_for_an_empty_bearer(self):
-        assert bearer_token(_Req({"Authorization": "Bearer   "})) is None
+    def test_a_security_scheme_is_declared(self):
+        schemes = self._spec()["components"]["securitySchemes"]
+        assert "Keycloak" in schemes
+        assert schemes["Keycloak"]["type"] == "oauth2"
+
+    def test_the_scheme_points_at_the_realm(self):
+        flow = self._spec()["components"]["securitySchemes"]["Keycloak"]["flows"][
+            "authorizationCode"
+        ]
+        assert flow["authorizationUrl"].endswith(
+            "/realms/opentaberna/protocol/openid-connect/auth"
+        )
+        assert flow["tokenUrl"].endswith(
+            "/realms/opentaberna/protocol/openid-connect/token"
+        )
+
+    @pytest.mark.parametrize(
+        ("method", "path"),
+        [
+            ("post", "/v1/items/"),
+            ("patch", "/v1/items/{item_uuid}"),
+            ("delete", "/v1/items/{item_uuid}"),
+            ("put", "/v1/items/{item_uuid}/image"),
+            ("post", "/v1/admin/inventory/"),
+            ("patch", "/v1/admin/orders/{order_id}/status"),
+            ("get", "/v1/customers/me"),
+            ("post", "/v1/orders/"),
+        ],
+    )
+    def test_protected_operations_carry_security(self, method, path):
+        assert self._spec()["paths"][path][method].get("security")
+
+    @pytest.mark.parametrize(
+        ("method", "path"),
+        [
+            ("get", "/v1/items/"),
+            ("get", "/v1/items/{item_uuid}"),
+            ("get", "/v1/items/{item_uuid}/image"),
+            ("get", "/health"),
+        ],
+    )
+    def test_public_operations_carry_none(self, method, path):
+        assert not self._spec()["paths"][path][method].get("security")
 
 
 # ---------------------------------------------------------------------------
@@ -240,15 +277,13 @@ class TestGetKeycloakId:
 
 class TestGetOptionalPrincipal:
     async def test_none_without_a_token(self):
-        assert await get_optional_principal(_Req()) is None
+        assert await get_optional_principal(token=None) is None
 
     async def test_an_invalid_token_is_an_error_not_anonymity(self):
         # Silently treating a bad token as "not logged in" hides expiry and
         # misconfiguration from the caller.
         with pytest.raises(AuthorizationError):
-            await get_optional_principal(
-                _Req({"Authorization": "Bearer bad.token.here"})
-            )
+            await get_optional_principal(token="bad.token.here")
 
 
 class TestNoDevelopmentBypass:

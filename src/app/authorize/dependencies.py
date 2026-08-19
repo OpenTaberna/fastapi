@@ -27,7 +27,8 @@ No development shims:
     path that actually ships.
 """
 
-from fastapi import Depends, Request
+from fastapi import Depends
+from fastapi.security import OAuth2AuthorizationCodeBearer
 
 from app.shared.config import get_settings
 from app.shared.exceptions import access_denied
@@ -37,32 +38,54 @@ from .token import Principal, authenticate
 
 logger = get_logger(__name__)
 
-_BEARER_PREFIX = "bearer "
 
-
-def bearer_token(request: Request) -> str | None:
+def _keycloak_url(path: str) -> str:
     """
-    Pull the raw bearer token out of the Authorization header.
+    Build a Keycloak endpoint URL from the browser-facing base.
+
+    The documentation page runs in a browser, so it needs the public URL rather
+    than the one the API uses internally.
 
     Args:
-        request: Incoming request.
+        path: Endpoint path below the realm.
 
     Returns:
-        The token, or None when no bearer credential was sent.
+        Absolute URL.
     """
-    header = request.headers.get("Authorization", "")
-    if header.lower().startswith(_BEARER_PREFIX):
-        token = header[len(_BEARER_PREFIX) :].strip()
-        return token or None
-    return None
+    settings = get_settings()
+    base = (settings.keycloak_public_url or settings.keycloak_url).rstrip("/")
+    return f"{base}/realms/{settings.keycloak_realm}/protocol/openid-connect/{path}"
 
 
-async def get_optional_principal(request: Request) -> Principal | None:
+# Declaring the scheme is what puts a padlock on every protected operation in
+# the generated documentation, and gives the docs page a working Authorize
+# button. Without it the enforcement is invisible: the endpoints still refuse
+# unauthenticated callers, but nothing in the schema says so, and a reader has
+# to guess which routes need a token.
+#
+# auto_error=False because this dependency is also used where a token is
+# optional; the refusals below are raised deliberately, with our own messages.
+oauth2_scheme = OAuth2AuthorizationCodeBearer(
+    authorizationUrl=_keycloak_url("auth"),
+    tokenUrl=_keycloak_url("token"),
+    refreshUrl=_keycloak_url("token"),
+    scheme_name="Keycloak",
+    auto_error=False,
+    description=(
+        "Keycloak access token. Admin endpoints additionally require the "
+        "`admin` realm role and a token issued to an admin frontend client."
+    ),
+)
+
+
+async def get_optional_principal(
+    token: str | None = Depends(oauth2_scheme),
+) -> Principal | None:
     """
     Identify the caller when they present a token, without requiring one.
 
     Args:
-        request: Incoming request.
+        token: Bearer token extracted by the security scheme, or None.
 
     Returns:
         Principal when a valid token was sent, otherwise None.
@@ -71,7 +94,6 @@ async def get_optional_principal(request: Request) -> Principal | None:
         AuthorizationError (403): If a token was sent but is not valid. An
             invalid token is a real error, not an anonymous request.
     """
-    token = bearer_token(request)
     if token is None:
         return None
     return authenticate(token)

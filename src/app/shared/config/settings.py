@@ -130,6 +130,14 @@ class Settings(BaseSettings):
             "back-office endpoints from it."
         ),
     )
+    keycloak_docs_client_id: str = Field(
+        default="opentaberna-admin-ui",
+        description=(
+            "Client the API documentation page logs in with. It is an admin "
+            "client so that the padlocked admin operations can actually be "
+            "tried out from the docs; the admin role is still required."
+        ),
+    )
     keycloak_admin_role: str = Field(
         default="admin",
         description="Realm role required for admin endpoints",
