@@ -53,6 +53,7 @@ router = APIRouter()
     status_code=status.HTTP_201_CREATED,
     summary="Create a new item",
     description="Create a new item in the store with all required information.",
+    dependencies=[Depends(require_admin)],
     responses=CREATE_ITEM_RESPONSES,
 )
 async def create_item(
@@ -251,6 +252,7 @@ async def get_item_by_sku(
     response_model=ItemResponse,
     summary="Update item",
     description="Update an existing item. Only provided fields will be updated.",
+    dependencies=[Depends(require_admin)],
     responses=UPDATE_ITEM_RESPONSES,
 )
 async def update_item(
@@ -305,6 +307,7 @@ async def update_item(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete item",
     description="Permanently delete an item from the store.",
+    dependencies=[Depends(require_admin)],
     responses=DELETE_ITEM_RESPONSES,
 )
 async def delete_item(

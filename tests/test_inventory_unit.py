@@ -217,42 +217,29 @@ class TestInventoryItemResponse:
 
 class TestRequireAdmin:
     """
-    require_admin must refuse a caller with no credentials.
-
-    Inventory now uses the shared dependency from app.authorize, so these
-    exercise the development-header path; the Keycloak token paths are covered
-    in test_authorize_unit.py.
+    Inventory uses the shared dependency from app.authorize, which now accepts
+    nothing but a verified token. The token paths are covered in
+    test_authorize_unit.py; this only pins the refusal of an anonymous caller.
     """
 
     @pytest.mark.asyncio
-    async def test_missing_header_raises(self):
-        from app.services.inventory.routers.inventory_router import require_admin
-
-        with pytest.raises(Exception) as exc_info:
-            await require_admin(principal=None, x_admin_key=None)
-
-        exc = exc_info.value
-        assert isinstance(exc, AuthorizationError)
-        assert exc.category == ErrorCategory.AUTHORIZATION
-
-    @pytest.mark.asyncio
-    async def test_any_non_empty_key_passes(self):
-        from app.services.inventory.routers.inventory_router import require_admin
-
-        # Should not raise for any truthy value
-        await require_admin(principal=None, x_admin_key="dev")
-        await require_admin(principal=None, x_admin_key="any-string")
-        await require_admin(principal=None, x_admin_key="supersecretkey")
-
-    @pytest.mark.asyncio
-    async def test_empty_string_raises(self):
-        """An empty string header value should also be denied."""
+    async def test_anonymous_caller_is_refused(self):
         from app.services.inventory.routers.inventory_router import require_admin
 
         with pytest.raises(AuthorizationError) as exc_info:
-            await require_admin(principal=None, x_admin_key=None)
+            await require_admin(principal=None)
 
         assert exc_info.value.category == ErrorCategory.AUTHORIZATION
+
+    @pytest.mark.asyncio
+    async def test_takes_no_header_credential(self):
+        # A signature check: re-adding a header credential here would reopen
+        # every admin surface at once.
+        import inspect
+
+        from app.services.inventory.routers.inventory_router import require_admin
+
+        assert set(inspect.signature(require_admin).parameters) == {"principal"}
 
 
 # ---------------------------------------------------------------------------

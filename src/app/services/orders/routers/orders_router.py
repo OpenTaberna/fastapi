@@ -10,9 +10,9 @@ FastAPI router for order lifecycle endpoints (Phase 1):
 """
 
 from datetime import UTC, datetime
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.payments.adapters import PaymentProviderAdapter
@@ -21,6 +21,7 @@ from app.services.payments.models import PaymentStatus
 from app.services.payments.services import get_payment_repository
 from app.shared.config import get_settings
 from app.shared.config.settings import Settings
+from app.services.customers.dependencies import get_current_customer_id
 from app.shared.database.session import get_session_dependency
 from app.shared.exceptions import entity_not_found
 from app.shared.logger import get_logger
@@ -66,25 +67,6 @@ router = APIRouter()
 # endpoints are testable without a running Keycloak instance.
 
 
-async def _get_customer_id(
-    x_customer_id: UUID | None = Header(
-        default=None,
-        alias="X-Customer-ID",
-        description="[Dev-only] Customer UUID. Replaced by Keycloak token in production.",
-    ),
-) -> UUID:
-    """Return the authenticated customer's UUID.
-
-    Development shim: reads from `X-Customer-ID` header.
-    Production: inject from validated Keycloak JWT.
-    """
-    if x_customer_id is None:
-        # Generate a stable UUID so automated tests without the header still pass
-        # through validation.  In production this path is unreachable.
-        return uuid4()
-    return x_customer_id
-
-
 # ---------------------------------------------------------------------------
 # POST /orders — Create draft order
 # ---------------------------------------------------------------------------
@@ -104,7 +86,7 @@ async def _get_customer_id(
 )
 async def create_order(
     payload: OrderCreate,
-    customer_id: UUID = Depends(_get_customer_id),
+    customer_id: UUID = Depends(get_current_customer_id),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> OrderDetailResponse:
     """
@@ -193,7 +175,7 @@ async def create_order(
 )
 async def get_order(
     order_id: UUID,
-    customer_id: UUID = Depends(_get_customer_id),
+    customer_id: UUID = Depends(get_current_customer_id),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> OrderDetailResponse:
     """
@@ -245,7 +227,7 @@ async def get_order(
 )
 async def cancel_order(
     order_id: UUID,
-    customer_id: UUID = Depends(_get_customer_id),
+    customer_id: UUID = Depends(get_current_customer_id),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> None:
     """
@@ -301,7 +283,7 @@ async def cancel_order(
 )
 async def checkout_order(
     order_id: UUID,
-    customer_id: UUID = Depends(_get_customer_id),
+    customer_id: UUID = Depends(get_current_customer_id),
     session: AsyncSession = Depends(get_session_dependency),
     adapter: PaymentProviderAdapter = Depends(get_payment_adapter),
     settings: Settings = Depends(get_settings),

@@ -33,10 +33,12 @@ import os
 import pytest
 import requests
 
+from auth_helpers import admin_headers
+
 _BASE = os.getenv("TEST_API_URL", "http://localhost:8000")
 ADMIN_URL = f"{_BASE}/v1/admin/orders"
 
-_ADMIN_HEADERS = {"X-Admin-Key": "test-admin-key"}
+_ADMIN_HEADERS = admin_headers()
 
 
 # ---------------------------------------------------------------------------

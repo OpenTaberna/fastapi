@@ -49,8 +49,12 @@ The third is the interesting one. Roles alone are not enough: an administrator
 browsing the shop still carries the `admin` role in their storefront token, so
 accepting it would let any script on the shop page drive the back office.
 
-**Everything else** needs no role. Customer-scoped endpoints identify the caller
-from the token when one is presented — a verified `sub` always beats the
+**Catalogue writes** (`POST`/`PATCH`/`DELETE /v1/items`) require an administrator
+too. What is listed is what customers see, so anyone able to create, alter or
+delete a product controls the shop. Reads stay public — shoppers browse before
+signing in.
+
+**Customer-scoped endpoints** identify the caller from the token — a verified `sub` always beats the
 `X-Keycloak-User-ID` header, so a caller cannot read another customer's profile
 by supplying an id alongside their own valid token. The catalogue, health
 endpoints and Stripe webhook stay open to everyone.
@@ -66,16 +70,13 @@ Nothing is stored in both places, so there is nothing to drift.
 Phone is declared as an optional attribute on the realm's user profile and
 mapped into the token as `phone_number`.
 
-## Development without Keycloak
+## There is no development bypass
 
-`X-Admin-Key` (any non-empty value) and `X-Keycloak-User-ID` stand in for a
-token so local work and the test suite do not need a running Keycloak. A bearer
-token always wins over them.
-
-A `Settings` validator forces `auth_allow_dev_headers` to `false` when
-`ENVIRONMENT=production`. Those headers let any caller claim any identity, so
-leaving them live in production would make every admin endpoint publicly
-writable.
+`X-Admin-Key` and `X-Keycloak-User-ID` are gone. A header naming the caller is
+forgeable by anyone who can reach the port, and a shim enabled "only in
+development" is one environment variable away from being production. Tests
+obtain real tokens from Keycloak, which also means they exercise the path that
+actually ships.
 
 ## Changing the realm
 
@@ -103,7 +104,11 @@ Both exist for development only.
 | Username | Password | Roles |
 |---|---|---|
 | `testuser` | `testpassword` | `customer` |
+| `testuser2` | `testpassword2` | `customer` |
 | `adminuser` | `adminpassword` | `customer`, `admin` |
+
+`testuser2` exists so tests can prove one customer cannot reach another's
+orders, addresses or returns.
 
 ## Getting a token by hand
 

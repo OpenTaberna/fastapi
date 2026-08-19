@@ -187,55 +187,34 @@ def _principal(roles=("admin",), client="opentaberna-admin-ui") -> Principal:
 
 class TestRequireAdmin:
     async def test_admin_from_the_admin_client_is_allowed(self):
-        assert await require_admin(principal=_principal(), x_admin_key=None) is not None
+        assert await require_admin(principal=_principal()) is not None
 
     async def test_admin_from_the_store_client_is_refused(self):
         # An admin browsing the shop still carries the admin role; accepting
         # that token would let shop-side script drive the back office.
         with pytest.raises(AuthorizationError):
-            await require_admin(
-                principal=_principal(client="opentaberna-store-ui"), x_admin_key=None
-            )
+            await require_admin(principal=_principal(client="opentaberna-store-ui"))
 
     async def test_non_admin_is_refused(self):
         with pytest.raises(AuthorizationError):
-            await require_admin(
-                principal=_principal(roles=("customer",)), x_admin_key=None
-            )
+            await require_admin(principal=_principal(roles=("customer",)))
 
     async def test_unknown_client_is_refused(self):
         with pytest.raises(AuthorizationError):
-            await require_admin(
-                principal=_principal(client="some-other-app"), x_admin_key=None
-            )
+            await require_admin(principal=_principal(client="some-other-app"))
 
     async def test_no_credentials_is_refused(self):
         with pytest.raises(AuthorizationError):
-            await require_admin(principal=None, x_admin_key=None)
+            await require_admin(principal=None)
 
-    async def test_dev_header_works_while_enabled(self):
-        assert await require_admin(principal=None, x_admin_key="dev") is None
+    async def test_takes_no_header_credential_at_all(self):
+        # The old X-Admin-Key shim is gone. Keeping this as a signature check
+        # means re-adding a header credential fails loudly rather than quietly
+        # reopening the whole admin surface.
+        import inspect
 
-    async def test_any_non_empty_dev_key_is_accepted(self):
-        # The shim's long-standing contract: the value is not a secret, it is
-        # a marker. Production refuses the header outright regardless.
-        assert await require_admin(principal=None, x_admin_key="test-admin-key") is None
-
-    async def test_empty_dev_key_is_refused(self):
-        with pytest.raises(AuthorizationError):
-            await require_admin(principal=None, x_admin_key="")
-
-    async def test_dev_header_is_refused_when_disabled(self):
-        import app.authorize.dependencies as dep
-
-        with patch.object(dep, "get_settings") as gs:
-            gs.return_value = MagicMock(
-                keycloak_admin_role="admin",
-                keycloak_admin_client_ids=["opentaberna-admin-ui"],
-                auth_allow_dev_headers=False,
-            )
-            with pytest.raises(AuthorizationError):
-                await require_admin(principal=None, x_admin_key="dev")
+        params = set(inspect.signature(require_admin).parameters)
+        assert params == {"principal"}
 
 
 # ---------------------------------------------------------------------------
@@ -245,35 +224,18 @@ class TestRequireAdmin:
 
 class TestGetKeycloakId:
     async def test_uses_the_token_subject(self):
-        assert (
-            await get_keycloak_id(principal=_principal(), x_keycloak_user_id=None)
-            == "u1"
-        )
-
-    async def test_token_wins_over_a_forged_header(self):
-        # The whole point: a caller cannot claim another customer's identity
-        # by adding a header alongside their own token.
-        got = await get_keycloak_id(
-            principal=_principal(), x_keycloak_user_id="someone-else"
-        )
-        assert got == "u1"
-
-    async def test_falls_back_to_the_header_in_development(self):
-        assert (
-            await get_keycloak_id(principal=None, x_keycloak_user_id="kc-1") == "kc-1"
-        )
+        assert await get_keycloak_id(principal=_principal()) == "u1"
 
     async def test_refuses_when_nothing_is_supplied(self):
         with pytest.raises(AuthorizationError):
-            await get_keycloak_id(principal=None, x_keycloak_user_id=None)
+            await get_keycloak_id(principal=None)
 
-    async def test_header_is_refused_when_dev_shims_are_disabled(self):
-        import app.authorize.dependencies as dep
+    async def test_takes_no_header_credential_at_all(self):
+        # A header naming the caller is forgeable by anyone who can reach the
+        # port; there must be no way to supply one.
+        import inspect
 
-        with patch.object(dep, "get_settings") as gs:
-            gs.return_value = MagicMock(auth_allow_dev_headers=False)
-            with pytest.raises(AuthorizationError):
-                await get_keycloak_id(principal=None, x_keycloak_user_id="kc-1")
+        assert set(inspect.signature(get_keycloak_id).parameters) == {"principal"}
 
 
 class TestGetOptionalPrincipal:
@@ -289,18 +251,10 @@ class TestGetOptionalPrincipal:
             )
 
 
-class TestProductionSafety:
-    def test_dev_headers_are_forced_off_in_production(self):
+class TestNoDevelopmentBypass:
+    def test_settings_carry_no_dev_header_switch(self):
+        # There is no environment in which a forgeable header is accepted, so
+        # there is no flag to get wrong.
         from app.shared.config.settings import Settings
 
-        s = Settings(
-            environment="production",
-            secret_key="a-real-secret-value-for-testing-only",
-            auth_allow_dev_headers=True,
-        )
-        assert s.auth_allow_dev_headers is False
-
-    def test_dev_headers_stay_available_in_development(self):
-        from app.shared.config.settings import Settings
-
-        assert Settings(environment="development").auth_allow_dev_headers is True
+        assert "auth_allow_dev_headers" not in Settings.model_fields

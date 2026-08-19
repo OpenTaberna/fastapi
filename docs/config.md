@@ -156,7 +156,6 @@ echo "postgresql://prod-host/prod-db" > /run/secrets/database_url
 | `keycloak_admin_role` | str | `admin` | Realm role required by admin endpoints |
 | `keycloak_admin_client_ids` | list[str] | `["opentaberna-admin-ui"]` | Clients whose tokens may reach admin endpoints (matched on `azp`) |
 | `keycloak_jwks_cache_seconds` | int | `300` | Signing-key cache lifetime |
-| `auth_allow_dev_headers` | bool | `True` | Accept the dev header shims; forced `False` in production |
 
 Two Keycloak URLs exist on purpose. Inside Docker the API reaches Keycloak over
 the compose network (`http://opentaberna-keycloak:8080`) while a browser reaches
@@ -170,10 +169,6 @@ from the admin frontend" true. Roles alone are not enough: an administrator
 browsing the storefront still carries the `admin` role, so a shop-side script
 could otherwise drive the back office.
 
-`auth_allow_dev_headers` keeps `X-Admin-Key` and `X-Keycloak-User-ID` working so
-local development and the test suite do not need a live Keycloak. A validator
-forces it off when `ENVIRONMENT=production`, because those headers let any
-caller claim any identity.
 
 ### CORS
 

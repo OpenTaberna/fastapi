@@ -260,3 +260,118 @@ class TestPublicEndpoints:
 
     def test_openapi_is_reachable(self):
         assert requests.get(f"{_BASE}/openapi.json").status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# The write surface is closed
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+class TestNoAnonymousWrites:
+    """
+    Nothing that changes the shop may be done without an administrator's token.
+
+    These endpoints were reachable by anyone who could open the port: a caller
+    could create, alter or delete catalogue products, which is exactly what
+    customers see in the store.
+    """
+
+    @staticmethod
+    def _item_payload() -> dict:
+        import uuid as _uuid
+
+        unique = _uuid.uuid4().hex[:8].upper()
+        return {
+            "sku": f"SEC-{unique}",
+            "status": "active",
+            "name": "Security probe",
+            "slug": f"sec-{unique.lower()}",
+            "brand": "Probe",
+            "categories": [],
+            "price": {"amount": 100, "currency": "EUR", "includes_tax": True},
+            "media": {"gallery": []},
+            "inventory": {
+                "stock_quantity": 1,
+                "stock_status": "in_stock",
+                "allow_backorder": False,
+            },
+            "shipping": {"is_physical": True, "shipping_class": "standard"},
+            "attributes": {},
+            "identifiers": {},
+            "custom": {},
+            "system": {"version": 1, "source": "api", "locale": "en_US"},
+        }
+
+    def test_anonymous_cannot_create_a_product(self):
+        resp = requests.post(f"{_BASE}/v1/items/", json=self._item_payload())
+        assert resp.status_code == 403
+
+    def test_a_customer_cannot_create_a_product(self, customer_token):
+        # Signed in is not the same as authorised.
+        resp = requests.post(
+            f"{_BASE}/v1/items/",
+            json=self._item_payload(),
+            headers=_auth(customer_token),
+        )
+        assert resp.status_code == 403
+
+    def test_an_admin_from_the_storefront_cannot_create_a_product(
+        self, admin_token_from_store
+    ):
+        resp = requests.post(
+            f"{_BASE}/v1/items/",
+            json=self._item_payload(),
+            headers=_auth(admin_token_from_store),
+        )
+        assert resp.status_code == 403
+
+    def test_an_admin_can_create_and_delete_a_product(self, admin_token):
+        created = requests.post(
+            f"{_BASE}/v1/items/", json=self._item_payload(), headers=_auth(admin_token)
+        )
+        assert created.status_code == 201
+        uuid_ = created.json()["uuid"]
+        deleted = requests.delete(
+            f"{_BASE}/v1/items/{uuid_}", headers=_auth(admin_token)
+        )
+        assert deleted.status_code == 204
+
+    def test_anonymous_cannot_delete_a_product(self, admin_token):
+        created = requests.post(
+            f"{_BASE}/v1/items/", json=self._item_payload(), headers=_auth(admin_token)
+        )
+        uuid_ = created.json()["uuid"]
+        try:
+            assert requests.delete(f"{_BASE}/v1/items/{uuid_}").status_code == 403
+        finally:
+            requests.delete(f"{_BASE}/v1/items/{uuid_}", headers=_auth(admin_token))
+
+    def test_forged_admin_header_grants_nothing(self):
+        # X-Admin-Key used to accept any non-empty value.
+        resp = requests.post(
+            f"{_BASE}/v1/items/",
+            json=self._item_payload(),
+            headers={"X-Admin-Key": "anything"},
+        )
+        assert resp.status_code == 403
+
+    def test_forged_identity_header_grants_nothing(self):
+        # X-Keycloak-User-ID used to name the caller.
+        resp = requests.get(
+            f"{_BASE}/v1/customers/me", headers={"X-Keycloak-User-ID": "kc-anything"}
+        )
+        assert resp.status_code == 403
+
+    def test_forged_customer_header_grants_nothing(self):
+        # X-Customer-ID used to attribute orders.
+        resp = requests.post(
+            f"{_BASE}/v1/orders/",
+            json={"items": [], "currency": "EUR"},
+            headers={"X-Customer-ID": "00000000-0000-0000-0000-000000000001"},
+        )
+        assert resp.status_code == 403
+
+    def test_reads_stay_public_for_the_storefront(self):
+        # Shoppers browse before signing in; closing this would close the shop.
+        assert requests.get(f"{_BASE}/v1/items/").status_code == 200
