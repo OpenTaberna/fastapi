@@ -18,6 +18,14 @@ from app.shared.storage.minio_adapter import build_minio_adapter
 
 logger = get_logger(__name__)
 
+# Secrets that must not ship to production with their default placeholder value
+_CRITICAL_SETTINGS: tuple[str, ...] = (
+    "secret_key",
+    "stripe_secret_key",
+    "stripe_webhook_secret",
+)
+_CHANGE_ME_MARKER = "CHANGE_ME"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -32,6 +40,9 @@ async def lifespan(app: FastAPI):
     Shutdown:
         - Close database connections gracefully
     """
+    # Startup: validate secrets before doing anything else
+    _validate_critical_secrets()
+
     # Startup: Initialize database and create tables
     await init_database()
     engine = get_engine()
@@ -45,6 +56,42 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown
     await close_database()
+
+
+def _validate_critical_secrets() -> None:
+    """
+    Warn (or raise in production) when critical secrets are still at their
+    ``CHANGE_ME`` default placeholder values.
+
+    Iterates over ``_CRITICAL_SETTINGS`` and checks each value against
+    ``_CHANGE_ME_MARKER``.  In non-production environments this is a warning
+    log so developers are reminded to configure their ``.env``.  In production
+    it raises ``RuntimeError`` to prevent a misconfigured deployment from
+    accepting real traffic.
+
+    Args:
+        None
+
+    Returns:
+        None
+
+    Raises:
+        RuntimeError: In production when any critical secret is still a
+                      ``CHANGE_ME`` placeholder.
+    """
+    settings = get_settings()
+
+    for key in _CRITICAL_SETTINGS:
+        value: str = getattr(settings, key, "")
+        if _CHANGE_ME_MARKER in value:
+            message = (
+                f"Critical secret '{key}' is still set to its default "
+                f"placeholder value (contains '{_CHANGE_ME_MARKER}'). "
+                "Set a real value in your .env or environment."
+            )
+            if settings.environment.is_production():
+                raise RuntimeError(message)
+            logger.warning(message, extra={"setting": key})
 
 
 async def _ensure_storage_buckets() -> None:

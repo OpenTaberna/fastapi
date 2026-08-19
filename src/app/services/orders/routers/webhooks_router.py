@@ -24,6 +24,8 @@ verified event dict from the adapter and is otherwise adapter-agnostic.
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Header, Request, status
+
+from app.shared.rate_limit import default_rate_limit, limiter
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,7 +42,9 @@ from app.shared.logger import get_logger
 
 from ..functions import (
     extract_order_id_from_webhook,
+    handle_charge_refunded,
     handle_payment_failed,
+    handle_payment_intent_canceled,
     handle_payment_succeeded,
 )
 from ..responses import STRIPE_WEBHOOK_RESPONSES
@@ -56,6 +60,8 @@ router = APIRouter()
 
 _EVT_SUCCEEDED = "payment_intent.succeeded"
 _EVT_FAILED = "payment_intent.payment_failed"
+_EVT_CANCELED = "payment_intent.canceled"
+_EVT_REFUNDED = "charge.refunded"
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +69,7 @@ _EVT_FAILED = "payment_intent.payment_failed"
 # ---------------------------------------------------------------------------
 
 
+@limiter.limit(default_rate_limit())
 @router.post(
     "/stripe",
     status_code=status.HTTP_200_OK,
@@ -169,6 +176,10 @@ async def stripe_webhook(
         await handle_payment_succeeded(session, order_repo, order_id, event_id)
     elif event_type == _EVT_FAILED:
         await handle_payment_failed(session, order_repo, order_id, event_id)
+    elif event_type == _EVT_CANCELED:
+        await handle_payment_intent_canceled(session, order_repo, order_id, event_id)
+    elif event_type == _EVT_REFUNDED:
+        await handle_charge_refunded(session, order_repo, order_id, event_id)
     else:
         logger.debug(
             "Stripe webhook event type not handled — ignored",

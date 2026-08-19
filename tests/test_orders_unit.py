@@ -102,8 +102,8 @@ class TestOrderStatus:
     def test_cancelled_value(self):
         assert OrderStatus.CANCELLED == "cancelled"
 
-    def test_all_six_statuses_exist(self):
-        assert len(OrderStatus) == 6
+    def test_all_seven_statuses_exist(self):
+        assert len(OrderStatus) == 7
 
 
 # ---------------------------------------------------------------------------
@@ -132,17 +132,26 @@ class TestAllowedTransitions:
             OrderStatus.CANCELLED,
         }
 
-    def test_paid_allows_only_ready_to_ship(self):
-        assert _ALLOWED_TRANSITIONS[OrderStatus.PAID] == {OrderStatus.READY_TO_SHIP}
+    def test_paid_allows_ready_to_ship_and_refunded(self):
+        assert _ALLOWED_TRANSITIONS[OrderStatus.PAID] == {
+            OrderStatus.READY_TO_SHIP,
+            OrderStatus.REFUNDED,
+        }
 
-    def test_ready_to_ship_allows_only_shipped(self):
-        assert _ALLOWED_TRANSITIONS[OrderStatus.READY_TO_SHIP] == {OrderStatus.SHIPPED}
+    def test_ready_to_ship_allows_shipped_and_refunded(self):
+        assert _ALLOWED_TRANSITIONS[OrderStatus.READY_TO_SHIP] == {
+            OrderStatus.SHIPPED,
+            OrderStatus.REFUNDED,
+        }
 
-    def test_shipped_is_terminal(self):
-        assert _ALLOWED_TRANSITIONS[OrderStatus.SHIPPED] == set()
+    def test_shipped_allows_only_refunded(self):
+        assert _ALLOWED_TRANSITIONS[OrderStatus.SHIPPED] == {OrderStatus.REFUNDED}
 
     def test_cancelled_is_terminal(self):
         assert _ALLOWED_TRANSITIONS[OrderStatus.CANCELLED] == set()
+
+    def test_refunded_is_terminal(self):
+        assert _ALLOWED_TRANSITIONS[OrderStatus.REFUNDED] == set()
 
 
 # ---------------------------------------------------------------------------

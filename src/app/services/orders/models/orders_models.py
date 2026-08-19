@@ -27,6 +27,7 @@ class OrderStatus(str, Enum):
         DRAFT → CANCELLED (customer cancels)
         PAID → READY_TO_SHIP (shipment created)
         READY_TO_SHIP → SHIPPED (handed to carrier)
+        PAID | SHIPPED → REFUNDED (webhook: charge.refunded)
     """
 
     DRAFT = "draft"
@@ -35,6 +36,7 @@ class OrderStatus(str, Enum):
     READY_TO_SHIP = "ready_to_ship"
     SHIPPED = "shipped"
     CANCELLED = "cancelled"
+    REFUNDED = "refunded"
 
 
 # ============================================================================

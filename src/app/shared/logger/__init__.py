@@ -40,7 +40,7 @@ from .interfaces import ILogFormatter, ILogFilter, ILogHandler
 
 # Implementations
 from .formatters import JSONFormatter, ConsoleFormatter
-from .filters import SensitiveDataFilter, LevelFilter
+from .filters import CorrelationIdFilter, SensitiveDataFilter, LevelFilter
 from .handlers import ConsoleHandler, FileHandler, DailyRotatingFileHandler
 
 
@@ -63,6 +63,7 @@ __all__ = [
     "JSONFormatter",
     "ConsoleFormatter",
     "SensitiveDataFilter",
+    "CorrelationIdFilter",
     "LevelFilter",
     "ConsoleHandler",
     "FileHandler",

@@ -10,7 +10,7 @@ from typing import List, Optional
 from app.shared.config.enums import Environment
 
 from .enums import LogLevel
-from .filters import SensitiveDataFilter
+from .filters import CorrelationIdFilter, SensitiveDataFilter
 from .handlers import ConsoleHandler, DailyRotatingFileHandler, FileHandler
 from .interfaces import ILogFilter, ILogHandler
 
@@ -29,7 +29,7 @@ class LoggerConfig:
         self.name = name
         self.level = level
         self.handlers = handlers or []
-        self.filters = filters or [SensitiveDataFilter()]
+        self.filters = filters or [SensitiveDataFilter(), CorrelationIdFilter()]
         self.environment = environment
 
     @classmethod

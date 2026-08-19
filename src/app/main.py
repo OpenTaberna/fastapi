@@ -2,22 +2,30 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from app.chore import lifespan
 from app.services.admin import admin_api_router
 from app.services.crud_item_store import router as item_store_router
 from app.services.customers import customers_api_router
 from app.services.fulfillment import fulfillment_api_router
+from app.services.health import health_api_router
 from app.services.inventory import inventory_api_router
 from app.services.orders import orders_api_router, webhooks_api_router
+from app.services.returns import admin_returns_api_router, returns_api_router
 from app.shared.exceptions import AppException, InternalError
-from app.shared.responses import ErrorResponse, ValidationErrorResponse
 from app.shared.logger import get_logger
+from app.shared.middleware import CorrelationIDMiddleware
+from app.shared.rate_limit import limiter
+from app.shared.responses import ErrorResponse, ValidationErrorResponse
 
 logger = get_logger(__name__)
 
 
 app = FastAPI(title="OpenTaberna API", lifespan=lifespan)
+app.state.limiter = limiter
 
 
 # Global exception handler for AppException
@@ -103,6 +111,9 @@ async def generic_exception_handler(request: Request, exc: Exception) -> JSONRes
 
 origins = ["*"]  # Consider restricting this in a production environment
 
+app.add_middleware(CorrelationIDMiddleware)
+app.add_middleware(SlowAPIMiddleware)
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -130,6 +141,13 @@ app.include_router(admin_api_router, prefix="/v1")
 
 # Include fulfillment service router (Phase 3)
 app.include_router(fulfillment_api_router, prefix="/v1")
+
+# Include returns service routers (Phase 4.4)
+app.include_router(returns_api_router, prefix="/v1")
+app.include_router(admin_returns_api_router, prefix="/v1")
+
+# Include health check endpoints (Phase 4.1)
+app.include_router(health_api_router)
 
 
 if __name__ == "__main__":

@@ -19,7 +19,9 @@ from .order_transformations import (
 from .order_validation import assert_order_owned_by, validate_status_transition
 from .payment_handlers import (
     extract_order_id_from_webhook,
+    handle_charge_refunded,
     handle_payment_failed,
+    handle_payment_intent_canceled,
     handle_payment_succeeded,
 )
 
@@ -38,8 +40,10 @@ __all__ = [
     # Validation
     "validate_status_transition",
     "assert_order_owned_by",
-    # Payment webhook handlers (Phase 1.5)
+    # Payment webhook handlers (Phase 1.5 / 4.3)
     "extract_order_id_from_webhook",
     "handle_payment_succeeded",
     "handle_payment_failed",
+    "handle_charge_refunded",
+    "handle_payment_intent_canceled",
 ]
