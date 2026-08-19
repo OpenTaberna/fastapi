@@ -13,17 +13,20 @@ FastAPI router for inventory management endpoints:
 Route order: by-sku is declared BEFORE /{inventory_id} so FastAPI does not
 attempt to parse the literal string "by-sku" as a UUID path parameter.
 
-All endpoints require the X-Admin-Key header (dev shim — replaced by
-Keycloak role=admin check in production).
+All endpoints require the X-Admin-Key header, enforced by the shared
+require_admin dependency from services/admin/dependencies.py — one dev shim
+for every admin surface, so the Keycloak role=admin check that replaces it
+lands in a single place.
 """
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.admin.dependencies import require_admin
 from app.shared.database.session import get_session_dependency
-from app.shared.exceptions import access_denied, entity_not_found
+from app.shared.exceptions import entity_not_found
 from app.shared.logger import get_logger
 from app.shared.responses import PaginatedResponse, PageInfo
 
@@ -41,37 +44,6 @@ from ..services import get_inventory_repository
 logger = get_logger(__name__)
 
 router = APIRouter()
-
-
-# ---------------------------------------------------------------------------
-# Admin guard
-# ---------------------------------------------------------------------------
-# TODO: Replace with real Keycloak role=admin dependency once auth is wired up.
-
-
-async def require_admin(
-    x_admin_key: str | None = Header(
-        default=None,
-        alias="X-Admin-Key",
-        description="[Dev-only] Admin access token. Replaced by Keycloak role=admin check in production.",
-    ),
-) -> None:
-    """
-    Enforce admin access on every inventory endpoint.
-
-    Development shim: accepts any non-empty X-Admin-Key header value.
-    Production TODO: validate a Keycloak JWT with role=admin claim.
-
-    Raises:
-        AuthorizationError (403): When the header is absent.
-    """
-    if x_admin_key is None:
-        logger.warning("Admin access attempted without credentials")
-        raise access_denied(
-            resource="admin/inventory",
-            action="access",
-            message="Admin access required. Provide X-Admin-Key header (dev) or valid admin JWT (production).",
-        )
 
 
 # ---------------------------------------------------------------------------
