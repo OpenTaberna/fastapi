@@ -11,8 +11,9 @@ that sets ``X-Forwarded-For`` — replace with a function that reads that header
 
 Both knobs come from Settings so the limiter can actually be configured:
 ``rate_limit_enabled`` turns limiting off entirely (useful in tests and local
-development), and ``rate_limit_per_minute`` sets the default budget applied to
-every route.  A route may still tighten that with its own decorator.
+development), and ``rate_limit_per_minute`` is the budget used by routes that
+opt in.  Limiting is opt-in per route rather than global — see the note on
+``default_limits`` below.
 
 Usage in a route:
     from app.shared.rate_limit import limiter, default_rate_limit
@@ -39,13 +40,14 @@ def default_rate_limit() -> str:
     return f"{get_settings().rate_limit_per_minute}/minute"
 
 
-_settings = get_settings()
-
 limiter = Limiter(
     key_func=get_remote_address,
     # enabled=False makes every decorated route a pass-through, so
     # RATE_LIMIT_ENABLED=false genuinely disables limiting rather than being
     # a setting nobody reads.
-    enabled=_settings.rate_limit_enabled,
-    default_limits=[default_rate_limit()],
+    enabled=get_settings().rate_limit_enabled,
+    # Deliberately no default_limits. A global cap would apply to every route
+    # including health probes and admin batch work, and at any value low
+    # enough to be useful it throttles legitimate clients. Routes that need a
+    # limit opt in with @limiter.limit(default_rate_limit()).
 )

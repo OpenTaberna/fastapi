@@ -197,6 +197,14 @@ class TestRateLimitConfiguration:
             gs.return_value.rate_limit_per_minute = 60
             parse(mod.default_rate_limit())  # raises if malformed
 
+    def test_no_global_default_limit_is_applied(self):
+        # A global cap hits every route — health probes, admin batch work and
+        # the test suite itself, which briefly exceeds any useful per-minute
+        # budget from a single IP. Limiting is opt-in per route instead.
+        from app.shared.rate_limit import limiter
+
+        assert not limiter._default_limits
+
     def test_limiter_is_exported_from_the_package(self):
         from app.shared.rate_limit import default_rate_limit, limiter
 
