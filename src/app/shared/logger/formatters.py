@@ -32,6 +32,13 @@ class JSONFormatter(ILogFormatter):
             "line": record.lineno,
         }
 
+        # Promote the correlation ID to a top-level field. It is set by
+        # CorrelationIdFilter and would otherwise be buried in "extra", where
+        # it is far harder to query a log store by.
+        correlation_id = getattr(record, "correlation_id", "")
+        if correlation_id:
+            log_data["correlation_id"] = correlation_id
+
         # Add context data
         context = get_log_context()
         if context:
@@ -63,6 +70,7 @@ class JSONFormatter(ILogFormatter):
                 "exc_text",
                 "stack_info",
                 "taskName",
+                "correlation_id",
             }
 
             extra_fields = {

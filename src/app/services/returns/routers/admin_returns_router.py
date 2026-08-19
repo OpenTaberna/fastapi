@@ -100,6 +100,8 @@ async def update_return(
         update_fields["admin_note"] = payload.admin_note
 
     updated = await return_repo.update(return_id, **update_fields)
+    # See issue #26 — the session dependency commits only after the response.
+    await session.commit()
 
     logger.info(
         "Admin updated return status",

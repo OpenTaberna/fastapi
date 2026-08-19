@@ -25,7 +25,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Header, Request, status
 
-from app.shared.rate_limit import limiter
+from app.shared.rate_limit import default_rate_limit, limiter
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -69,7 +69,7 @@ _EVT_REFUNDED = "charge.refunded"
 # ---------------------------------------------------------------------------
 
 
-@limiter.limit("30/minute")
+@limiter.limit(default_rate_limit())
 @router.post(
     "/stripe",
     status_code=status.HTTP_200_OK,

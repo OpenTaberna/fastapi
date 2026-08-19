@@ -19,7 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.orders.models.orders_models import OrderStatus
 from app.services.orders.services.orders_db_service import get_order_repository
 from app.shared.database.session import get_session_dependency
-from app.shared.exceptions import entity_not_found, operation_not_allowed
+from app.shared.exceptions import (
+    access_denied,
+    entity_not_found,
+    operation_not_allowed,
+)
 from app.shared.logger import get_logger
 
 from ..models import CreateReturnRequest, ReturnResponse
@@ -135,6 +139,10 @@ async def create_return(
         customer_id=customer_id,
         reason=payload.reason,
     )
+    # Commit before returning. get_session_dependency also commits, but only
+    # after the response has been sent, so a client that reads the return
+    # straight back can otherwise get a 404 (see issue #26).
+    await session.commit()
 
     logger.info(
         "Return request filed",
@@ -185,8 +193,6 @@ def _assert_order_owned_by_customer(order, customer_id: UUID, order_id: UUID) ->
     Raises:
         AuthorizationError (403): If the order.customer_id != customer_id.
     """
-    from app.shared.exceptions import access_denied
-
     if order.customer_id != customer_id:
         raise access_denied(
             resource=f"order '{order_id}'",
