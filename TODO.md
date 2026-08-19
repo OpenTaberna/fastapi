@@ -3,8 +3,8 @@
 Ordered by dependency. Each phase builds on the previous.  
 CRUD for items (`crud-item-store`) is handled by a partner and not listed here.
 
-**Status:** Phases 0–3 are complete and merged. Phase 4 (operational hardening) is the
-current work. Auth is the one cross-cutting gap: every protected route still uses a
+**Status:** Phases 0–4 are complete and merged, apart from 4.3 (refunds) and 4.6
+(Alembic). Auth is the one cross-cutting gap: every protected route still uses a
 development header shim rather than Keycloak — see the Auth section below.
 
 ---
@@ -230,20 +230,24 @@ outstanding work, and it is deliberately isolated so the swap touches few files.
 
 ## Phase 4 — Operational Hardening
 
-> Current focus. Nothing in this phase is on `main` yet, apart from the one item marked
-> done in 4.5.
+> Mostly complete. 4.3 and 4.6 remain.
 
-### 4.1 Observability
+### 4.1 Observability ✅
 
-- [ ] Correlation ID middleware injecting `X-Request-ID` into the log context
-- [ ] Structured log fields (`order_id`, `payment_id`, `user_id`) on all relevant statements
-- [ ] Health endpoints: `GET /health` (liveness) and `GET /health/ready` (DB + Redis)
+- [x] Correlation ID middleware — reads `X-Correlation-ID` or generates one, stores it in
+      a ContextVar and echoes it on the response
+- [x] `CorrelationIdFilter` attaches it to every log record, and `JSONFormatter` promotes
+      it to a top-level field. Without the filter the ID reaches the response header but
+      never the logs, which is the whole point of having one
+- [x] Health endpoints: `GET /health` (liveness, touches no dependencies) and
+      `GET /health/ready` (database + Redis, 503 when unhealthy)
 - [ ] Prometheus metrics endpoint (optional)
 
-### 4.2 Reservation Expiry Job
+### 4.2 Reservation Expiry Job ✅
 
-- [ ] Schedule the existing `expire_reservations` as an ARQ cron job — the function is
-      written and tested, only the schedule is missing
+- [x] `expire_reservations_sweep` scheduled as an ARQ cron job every 5 minutes. The
+      function existed from Phase 1.2 but nothing called it, so TTL-exceeded reservations
+      held stock indefinitely
 - [ ] Alert on repeated expiry failures
 
 ### 4.3 Payment Reversals / Refunds
@@ -251,27 +255,41 @@ outstanding work, and it is deliberately isolated so the swap touches few files.
 - [ ] Handle `charge.refunded` and `payment_intent.canceled` webhooks
 - [ ] Payment → REFUNDED, Order → CANCELLED, release the reservation if not yet committed
 - [ ] If already shipped: create a `Refund` record and flag for manual review
-- [ ] Note: `PaymentStatus.REFUNDED` already exists, but nothing sets it
+- [ ] `PaymentStatus.REFUNDED` and `OrderStatus.REFUNDED` exist, but nothing assigns them
 
-### 4.4 Returns & RMA
+### 4.4 Returns & RMA ✅
 
-- [ ] `ReturnStatus` enum: REQUESTED / APPROVED / RECEIVED / REFUNDED
-- [ ] `Return` ORM model + schemas
-- [ ] `POST /v1/orders/{id}/returns` — customer requests a return
-- [ ] `PATCH /v1/admin/returns/{id}` — admin approves and processes
+- [x] `ReturnStatus` enum: REQUESTED / APPROVED / REJECTED / COMPLETED
+- [x] `ReturnDB` ORM model + Pydantic schemas
+- [x] `POST /v1/orders/{id}/returns` — customer files a return against a SHIPPED or
+      REFUNDED order, one per order, reason required
+- [x] `PATCH /v1/admin/returns/{id}` — admin transitions the RMA; REJECTED and COMPLETED
+      are terminal and invalid transitions are refused
 
 ### 4.5 Security Hardening
 
 - [x] `secret_key` startup validation rejects the default in production
+- [x] Rate limiting via SlowAPI, driven by `RATE_LIMIT_ENABLED` and `RATE_LIMIT_PER_MINUTE`.
+      Opt-in per route — a global cap would throttle health probes and admin batch work
 - [ ] Restrict CORS — `main.py` still sets `origins = ["*"]`
-- [ ] Rate limiting, at minimum on the webhook endpoint
 - [ ] Enable Trivy/Bandit as *blocking* checks — both are `continue-on-error: true`, so
       findings never fail the build
 
 ### 4.6 Schema Migrations
 
 - [ ] Introduce Alembic. `create_all()` cannot alter existing tables, so any column change
-      currently requires dropping the database — unacceptable once there is real data.
+      currently requires dropping the database — unacceptable once there is real data
+
+---
+
+## Known Defects
+
+- [ ] **Transactions commit after the response is sent** (issue #26). `get_session_dependency`
+      commits in a `yield` dependency's exit code, which FastAPI runs after the response.
+      A client can be handed a `201` and then read `404`. Routers work around it with an
+      explicit `session.commit()`; the durable fix moves the session lifecycle into
+      middleware. **Do not remove a router's explicit commit as "redundant"** — it is
+      load-bearing until that lands.
 
 ---
 
