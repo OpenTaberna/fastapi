@@ -64,7 +64,32 @@ services:
 
   opentaberna-keycloak:
     image: quay.io/keycloak/keycloak:26.2
-    command: start-dev --import-realm
+    # The master realm defaults to sslRequired=external, and Docker's port
+    # forwarding makes a request from the host look non-local, so Keycloak
+    # refuses plain HTTP and the admin console becomes unreachable. Relaxing it
+    # once the server is up keeps http://localhost:8080/admin usable.
+    #
+    # Applied on every start rather than once by hand, because it lives in the
+    # database and would be lost whenever the keycloak_data volume is recreated.
+    # Development only - the compose file that ships this is the dev one.
+    command:
+      - "-c"
+      - |
+        /opt/keycloak/bin/kc.sh start-dev --import-realm &
+        server=$$!
+        for _ in $$(seq 1 60); do
+          if /opt/keycloak/bin/kcadm.sh config credentials \
+               --server http://127.0.0.1:8080 --realm master \
+               --user "$$KEYCLOAK_ADMIN" --password "$$KEYCLOAK_ADMIN_PASSWORD" \
+               >/dev/null 2>&1; then
+            /opt/keycloak/bin/kcadm.sh update realms/master -s sslRequired=NONE >/dev/null 2>&1 \
+              && echo "master realm: sslRequired=NONE (dev)"
+            break
+          fi
+          sleep 2
+        done
+        wait $$server
+    entrypoint: ["/bin/bash"]
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
