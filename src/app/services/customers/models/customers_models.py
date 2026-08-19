@@ -47,6 +47,11 @@ class CustomerResponse(CustomerBase):
 
     model_config = ConfigDict(from_attributes=True)
 
+    # Override EmailStr → str: response reads from trusted DB data.
+    # Re-validating stored emails through EmailStr can fail for valid but
+    # non-public domains (e.g. .local, .internal) when using email-validator 2.x.
+    email: str = Field(..., description="Customer email address")
+
     id: UUID = Field(..., description="Internal customer UUID")
     created_at: datetime = Field(..., description="Record creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
