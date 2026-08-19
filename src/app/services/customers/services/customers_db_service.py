@@ -2,8 +2,13 @@
 Customers Database Services
 
 Repositories for customer and address data access.
-Business rules (e.g. enforcing one default address per customer) live here,
-not in the router.
+Business rules (e.g. enforcing one default address per customer, or which
+identity claims a new profile requires) live here, not in the router.
+
+Lookup and creation are kept as separate, deterministic operations —
+get_by_keycloak_id finds, create_from_claims creates — so callers compose
+the behaviour they need instead of relying on one function that sometimes
+reads and sometimes writes.
 """
 
 from typing import Sequence
@@ -35,26 +40,37 @@ class CustomerRepository(BaseRepository[CustomerDB]):
             raise entity_not_found("Customer", keycloak_user_id)
         return customer
 
-    async def get_or_create(
+    async def create_from_claims(
         self,
         keycloak_user_id: str,
         email: str | None,
         first_name: str | None,
         last_name: str | None,
-    ) -> tuple[CustomerDB, bool]:
+    ) -> CustomerDB:
         """
-        Return the customer matching *keycloak_user_id*, creating it if absent.
+        Create a customer profile from identity claims.
 
-        On first call (no existing profile), all creation fields are required.
-        Raises missing_field (422) if any creation field is absent.
+        Deliberately does one thing: it always creates.  Looking up an
+        existing profile is get_by_keycloak_id's job, so a caller composes
+        the two explicitly and each function stays deterministic — the same
+        inputs always produce the same kind of outcome.
+
+        All three claims are mandatory here because a profile cannot be
+        created without them; enforcing that in the service layer keeps the
+        rule in one place rather than in every caller.
+
+        Args:
+            keycloak_user_id: Keycloak subject claim to attach the profile to.
+            email:            Customer e-mail address. Required.
+            first_name:       Customer given name. Required.
+            last_name:        Customer family name. Required.
 
         Returns:
-            (customer, created) — created is True when a new record was inserted.
-        """
-        customer = await self.get_by_keycloak_id(keycloak_user_id)
-        if customer is not None:
-            return customer, False
+            The newly created CustomerDB row.
 
+        Raises:
+            ValidationError (422): If any required claim is missing or empty.
+        """
         if not email:
             raise missing_field("X-Customer-Email")
         if not first_name:
@@ -62,13 +78,12 @@ class CustomerRepository(BaseRepository[CustomerDB]):
         if not last_name:
             raise missing_field("X-Customer-Last-Name")
 
-        customer = await self.create(
+        return await self.create(
             keycloak_user_id=keycloak_user_id,
             email=email,
             first_name=first_name,
             last_name=last_name,
         )
-        return customer, True
 
     async def update_customer(
         self,

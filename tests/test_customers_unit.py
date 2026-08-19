@@ -7,7 +7,8 @@ Covers:
     - CustomerResponse                              — from_attributes round-trip via MagicMock
     - AddressResponse                               — from_attributes round-trip via MagicMock
     - CustomerRepository.get_by_keycloak_id_or_404 — found, not found (404)
-    - CustomerRepository.get_or_create              — returns existing / creates new / missing fields (422)
+    - CustomerRepository.create_from_claims         — creates / missing fields (422)
+    - dependencies: get_keycloak_id / get_creation_claims / CreationClaims
     - CustomerRepository.update_customer            — empty payload, partial payload, update returns None (404)
     - AddressRepository._clear_default              — issues correct UPDATE via session
     - AddressRepository.create_address              — clears default when is_default=True
@@ -20,7 +21,11 @@ from datetime import datetime, UTC
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
-from app.shared.exceptions.errors import AuthorizationError, NotFoundError, ValidationError
+from app.shared.exceptions.errors import (
+    AuthorizationError,
+    NotFoundError,
+    ValidationError,
+)
 from app.services.customers.models import (
     AddressCreate,
     AddressResponse,
@@ -29,6 +34,11 @@ from app.services.customers.models import (
     CustomerUpdate,
 )
 from app.services.customers.models.customers_models import CustomerBase
+from app.services.customers.dependencies import (
+    CreationClaims,
+    get_creation_claims,
+    get_keycloak_id,
+)
 from app.services.customers.services.customers_db_service import (
     AddressRepository,
     CustomerRepository,
@@ -300,34 +310,17 @@ class TestCustomerRepository:
         assert "kc-ghost" in exc_info.value.message
 
     @pytest.mark.asyncio
-    async def test_get_or_create_returns_existing(self, repo):
-        existing = _make_customer()
-        repo.get_by_keycloak_id = AsyncMock(return_value=existing)
-
-        customer, created = await repo.get_or_create(
-            keycloak_user_id="kc-001",
-            email="x@example.com",
-            first_name="X",
-            last_name="Y",
-        )
-
-        assert created is False
-        assert customer is existing
-
-    @pytest.mark.asyncio
-    async def test_get_or_create_creates_new(self, repo):
+    async def test_create_from_claims_creates_record(self, repo):
         new_customer = _make_customer()
-        repo.get_by_keycloak_id = AsyncMock(return_value=None)
         repo.create = AsyncMock(return_value=new_customer)
 
-        customer, created = await repo.get_or_create(
+        customer = await repo.create_from_claims(
             keycloak_user_id="kc-new",
             email="new@example.com",
             first_name="New",
             last_name="User",
         )
 
-        assert created is True
         assert customer is new_customer
         repo.create.assert_awaited_once_with(
             keycloak_user_id="kc-new",
@@ -337,11 +330,27 @@ class TestCustomerRepository:
         )
 
     @pytest.mark.asyncio
-    async def test_get_or_create_raises_422_when_email_missing(self, repo):
-        repo.get_by_keycloak_id = AsyncMock(return_value=None)
+    async def test_create_from_claims_never_reads_before_writing(self, repo):
+        # The split is the point: this function only ever creates, so it must
+        # not silently return an existing row the way get_or_create did.
+        repo.get_by_keycloak_id = AsyncMock()
+        repo.create = AsyncMock(return_value=_make_customer())
+
+        await repo.create_from_claims(
+            keycloak_user_id="kc-new",
+            email="new@example.com",
+            first_name="New",
+            last_name="User",
+        )
+
+        repo.get_by_keycloak_id.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_create_from_claims_raises_422_when_email_missing(self, repo):
+        repo.create = AsyncMock()
 
         with pytest.raises(ValidationError) as exc_info:
-            await repo.get_or_create(
+            await repo.create_from_claims(
                 keycloak_user_id="kc-new",
                 email=None,
                 first_name="New",
@@ -349,13 +358,14 @@ class TestCustomerRepository:
             )
 
         assert "X-Customer-Email" in exc_info.value.message
+        repo.create.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_get_or_create_raises_422_when_first_name_missing(self, repo):
-        repo.get_by_keycloak_id = AsyncMock(return_value=None)
+    async def test_create_from_claims_raises_422_when_first_name_missing(self, repo):
+        repo.create = AsyncMock()
 
         with pytest.raises(ValidationError) as exc_info:
-            await repo.get_or_create(
+            await repo.create_from_claims(
                 keycloak_user_id="kc-new",
                 email="new@example.com",
                 first_name=None,
@@ -363,13 +373,14 @@ class TestCustomerRepository:
             )
 
         assert "X-Customer-First-Name" in exc_info.value.message
+        repo.create.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_get_or_create_raises_422_when_last_name_missing(self, repo):
-        repo.get_by_keycloak_id = AsyncMock(return_value=None)
+    async def test_create_from_claims_raises_422_when_last_name_missing(self, repo):
+        repo.create = AsyncMock()
 
         with pytest.raises(ValidationError) as exc_info:
-            await repo.get_or_create(
+            await repo.create_from_claims(
                 keycloak_user_id="kc-new",
                 email="new@example.com",
                 first_name="New",
@@ -377,6 +388,21 @@ class TestCustomerRepository:
             )
 
         assert "X-Customer-Last-Name" in exc_info.value.message
+        repo.create.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_create_from_claims_rejects_empty_string_claims(self, repo):
+        repo.create = AsyncMock()
+
+        with pytest.raises(ValidationError):
+            await repo.create_from_claims(
+                keycloak_user_id="kc-new",
+                email="",
+                first_name="New",
+                last_name="User",
+            )
+
+        repo.create.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_update_customer_empty_payload_returns_existing(self, repo):
@@ -557,3 +583,77 @@ class TestAddressRepository:
         await repo.delete_address(address.id, customer_id)
 
         repo.delete.assert_awaited_once_with(address.id)
+
+
+# ---------------------------------------------------------------------------
+# Dependencies — identity resolution lives outside the router
+# ---------------------------------------------------------------------------
+
+
+class TestCustomerDependencies:
+    """
+    The auth shim and the creation-claims dataclass belong to the service's
+    dependency module, not to the router, so Keycloak can replace them in
+    one place without touching a single route handler.
+    """
+
+    @pytest.mark.asyncio
+    async def test_get_keycloak_id_returns_subject_claim(self):
+        assert await get_keycloak_id(x_keycloak_user_id="kc-123") == "kc-123"
+
+    @pytest.mark.asyncio
+    async def test_get_creation_claims_collects_all_headers(self):
+        claims = await get_creation_claims(
+            x_customer_email="a@b.c",
+            x_customer_first_name="Jane",
+            x_customer_last_name="Doe",
+        )
+        assert claims == CreationClaims(
+            email="a@b.c", first_name="Jane", last_name="Doe"
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_creation_claims_passes_absent_headers_through_as_none(self):
+        claims = await get_creation_claims(
+            x_customer_email=None,
+            x_customer_first_name=None,
+            x_customer_last_name=None,
+        )
+        assert claims == CreationClaims(email=None, first_name=None, last_name=None)
+
+    def test_get_creation_claims_headers_are_optional(self):
+        # FastAPI resolves these defaults per request; assert the signature
+        # declares them optional so an absent header is not a 422.
+        import inspect
+
+        params = inspect.signature(get_creation_claims).parameters
+        for name in (
+            "x_customer_email",
+            "x_customer_first_name",
+            "x_customer_last_name",
+        ):
+            assert params[name].default.default is None
+
+    @pytest.mark.asyncio
+    async def test_get_creation_claims_does_not_validate(self):
+        # Validation is the service layer's job — the dependency only collects.
+        claims = await get_creation_claims(
+            x_customer_email="only@email.com",
+            x_customer_first_name=None,
+            x_customer_last_name=None,
+        )
+        assert claims.email == "only@email.com"
+        assert claims.first_name is None
+
+    def test_creation_claims_is_immutable(self):
+        claims = CreationClaims(email="a@b.c", first_name="Jane", last_name="Doe")
+        with pytest.raises(Exception):
+            claims.email = "changed@example.com"
+
+    def test_creation_claims_not_defined_in_router_module(self):
+        # Guards the refactor: re-adding it to the router should fail here.
+        from app.services.customers.routers import customers_router as router_mod
+
+        assert not hasattr(router_mod, "_CreationHeaders")
+        assert not hasattr(router_mod, "_get_creation_headers")
+        assert not hasattr(router_mod, "_get_keycloak_id")
