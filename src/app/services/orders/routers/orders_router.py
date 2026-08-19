@@ -17,6 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.payments.adapters import PaymentProviderAdapter
 from app.services.payments.dependencies import get_payment_adapter
+from app.services.payments.models import PaymentStatus
+from app.services.payments.services import get_payment_repository
 from app.shared.config import get_settings
 from app.shared.config.settings import Settings
 from app.shared.database.session import get_session_dependency
@@ -371,6 +373,18 @@ async def checkout_order(
             "order_id": str(order_id),
             "provider_reference": payment_session.provider_reference,
         },
+    )
+
+    # Persist the PSP transaction immediately.  The webhook will move this
+    # record to succeeded/failed together with the order state transition.
+    payment_repo = get_payment_repository(session)
+    await payment_repo.create(
+        order_id=order.id,
+        provider="stripe",
+        provider_reference=payment_session.provider_reference,
+        amount=payment_session.amount,
+        currency=payment_session.currency.upper(),
+        status=PaymentStatus.PENDING.value,
     )
 
     # Advance status
