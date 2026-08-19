@@ -341,8 +341,6 @@ class Settings(BaseSettings):
     @classmethod
     def load_stripe_webhook_secret(cls, v: str | None) -> str:
         """Load Stripe webhook secret from secrets if available."""
-        if v:
-            return v
         return load_secret("stripe_webhook_secret") or v or "CHANGE_ME_IN_PRODUCTION"
 
     def model_post_init(self, __context: Any) -> None:
