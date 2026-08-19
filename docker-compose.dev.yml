@@ -122,7 +122,7 @@ services:
     build:
       context: .
       dockerfile: src/Dockerfile
-    image: opentaberna-api:latest
+    image: opentaberna-worker:latest
     command: python -m app.worker_main app.worker.WorkerSettings
     env_file: .env
     environment:
