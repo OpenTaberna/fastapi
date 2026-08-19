@@ -1,7 +1,7 @@
 """
 Customers Models Package
 
-Exports ORM models and Pydantic schemas for the customers service.
+Exports ORM models and API data structures for the customers service.
 """
 
 from .customers_db_models import AddressDB, CustomerDB
@@ -12,6 +12,7 @@ from .customers_models import (
     AddressUpdate,
     CustomerBase,
     CustomerCreate,
+    CustomerCreationHeaders,
     CustomerResponse,
     CustomerUpdate,
 )
@@ -23,6 +24,7 @@ __all__ = [
     # Pydantic schemas
     "CustomerBase",
     "CustomerCreate",
+    "CustomerCreationHeaders",
     "CustomerUpdate",
     "CustomerResponse",
     "AddressBase",

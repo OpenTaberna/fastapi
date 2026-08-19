@@ -1,10 +1,11 @@
 """
-Customers Pydantic Schemas
+Customers API Models
 
-API-level input/output validation for the customers service.
+API-level input/output validation and dependency data for the customers service.
 Completely independent of SQLAlchemy — only used in routers and functions.
 """
 
+from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
@@ -14,6 +15,15 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 # ============================================================================
 # Customer Schemas
 # ============================================================================
+
+
+@dataclass(frozen=True, slots=True)
+class CustomerCreationHeaders:
+    """Optional identity headers used when creating a customer profile."""
+
+    email: str | None
+    first_name: str | None
+    last_name: str | None
 
 
 class CustomerBase(BaseModel):
