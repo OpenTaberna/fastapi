@@ -79,6 +79,10 @@ async def get_my_profile(
             first_name=claims.first_name,
             last_name=claims.last_name,
         )
+        # Commit before responding. get_session_dependency also commits, but
+        # its exit code runs after the response is sent, so a client reading
+        # the profile straight back can otherwise get a 404 (issue #26).
+        await session.commit()
         logger.info(
             "New customer profile created",
             extra={"customer_id": str(customer.id)},
@@ -109,6 +113,10 @@ async def update_my_profile(
     repo = get_customer_repository(session)
     customer = await repo.get_by_keycloak_id_or_404(keycloak_user_id)
     updated = await repo.update_customer(customer.id, payload)
+    # Commit before responding. get_session_dependency also commits, but its
+    # exit code runs after the response is sent, so a client reading the row
+    # straight back can otherwise get a 404 (issue #26).
+    await session.commit()
     return CustomerResponse.model_validate(updated)
 
 
@@ -164,6 +172,10 @@ async def create_my_address(
     customer = await customer_repo.get_by_keycloak_id_or_404(keycloak_user_id)
     address_repo = get_address_repository(session)
     address = await address_repo.create_address(customer.id, payload)
+    # Commit before responding. get_session_dependency also commits, but its
+    # exit code runs after the response is sent, so a client reading the row
+    # straight back can otherwise get a 404 (issue #26).
+    await session.commit()
     logger.info(
         "Address created",
         extra={"address_id": str(address.id), "customer_id": str(customer.id)},
@@ -197,6 +209,10 @@ async def update_my_address(
     customer = await customer_repo.get_by_keycloak_id_or_404(keycloak_user_id)
     address_repo = get_address_repository(session)
     address = await address_repo.update_address(address_id, customer.id, payload)
+    # Commit before responding. get_session_dependency also commits, but its
+    # exit code runs after the response is sent, so a client reading the row
+    # straight back can otherwise get a 404 (issue #26).
+    await session.commit()
     return AddressResponse.model_validate(address)
 
 
@@ -226,6 +242,10 @@ async def delete_my_address(
     customer = await customer_repo.get_by_keycloak_id_or_404(keycloak_user_id)
     address_repo = get_address_repository(session)
     await address_repo.delete_address(address_id, customer.id)
+    # Commit before responding. get_session_dependency also commits, but its
+    # exit code runs after the response is sent, so a client reading the row
+    # straight back can otherwise get a 404 (issue #26).
+    await session.commit()
     logger.info(
         "Address deleted",
         extra={"address_id": str(address_id), "customer_id": str(customer.id)},

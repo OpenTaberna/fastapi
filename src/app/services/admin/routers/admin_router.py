@@ -273,6 +273,10 @@ async def override_order_status(
 
     order_repo = get_admin_order_repository(session)
     updated_order = await order_repo.update(order_id, status=payload.status.value)
+    # Commit before responding. get_session_dependency also commits, but its
+    # exit code runs after the response is sent, so a client reading the row
+    # straight back can otherwise get a 404 (issue #26).
+    await session.commit()
 
     logger.info(
         "Admin status override",
@@ -381,6 +385,10 @@ async def create_order_shipment(
         tracking_number=payload.tracking_number,
         session=session,
     )
+    # Commit before responding. get_session_dependency also commits, but its
+    # exit code runs after the response is sent, so a client reading the row
+    # straight back can otherwise get a 404 (issue #26).
+    await session.commit()
 
     ctx: OrderContext = await fetch_order_context(order_id, session)
 
@@ -442,6 +450,10 @@ async def ship_order(
         BusinessRuleError (400): If the order is not in READY_TO_SHIP status.
     """
     updated_order = await mark_order_shipped(order_id=order_id, session=session)
+    # Commit before responding. get_session_dependency also commits, but its
+    # exit code runs after the response is sent, so a client reading the row
+    # straight back can otherwise get a 404 (issue #26).
+    await session.commit()
     ctx: OrderContext = await fetch_order_context(order_id, session)
 
     if ctx.customer:

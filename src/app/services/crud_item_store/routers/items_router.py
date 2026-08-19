@@ -89,6 +89,10 @@ async def create_item(
         custom=item.custom,
         system=item.system.model_dump(),
     )
+    # Commit before responding. get_session_dependency also commits, but its
+    # exit code runs after the response is sent, so a client reading the row
+    # straight back can otherwise get a 404 (issue #26).
+    await session.commit()
     logger.info("Item created", extra={"uuid": str(created.uuid), "sku": created.sku})
     return db_to_response(created)
 
@@ -278,6 +282,10 @@ async def update_item(
 
     # Update item
     updated = await repo.update(item_uuid, **update_data)
+    # Commit before responding. get_session_dependency also commits, but its
+    # exit code runs after the response is sent, so a client reading the row
+    # straight back can otherwise get a 404 (issue #26).
+    await session.commit()
     logger.info("Item updated", extra={"uuid": str(item_uuid)})
     return db_to_response(updated)
 
@@ -312,4 +320,8 @@ async def delete_item(
         raise entity_not_found("Item", item_uuid)
 
     await repo.delete(item_uuid)
+    # Commit before responding. get_session_dependency also commits, but its
+    # exit code runs after the response is sent, so a client reading the row
+    # straight back can otherwise get a 404 (issue #26).
+    await session.commit()
     logger.info("Item deleted", extra={"uuid": str(item_uuid)})
