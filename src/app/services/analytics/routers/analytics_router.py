@@ -27,6 +27,7 @@ from ..dependencies import require_admin
 from ..functions import Interval, Period, build_period, percent_change
 from ..models import (
     AnalyticsFunnelResponse,
+    AnalyticsStorefrontResponse,
     AnalyticsProductsResponse,
     AnalyticsSummaryResponse,
     AnalyticsTimeseriesResponse,
@@ -36,9 +37,12 @@ from ..models import (
     CurrencyTotalsPrevious,
     FunnelStep,
     NeverSoldItem,
+    PathViews,
     PeriodInfo,
+    ProductInterest,
     ProductPerformance,
     SeriesPoint,
+    StorefrontStep,
 )
 from ..responses import (
     FUNNEL_RESPONSES,
@@ -46,6 +50,8 @@ from ..responses import (
     SUMMARY_RESPONSES,
     TIMESERIES_RESPONSES,
 )
+from app.services.storefront_analytics.services import StorefrontEventRepository
+
 from ..services import AnalyticsRepository, fill_series_gaps
 
 logger = get_logger(__name__)
@@ -367,4 +373,92 @@ async def get_funnel(
         payment_failed=counts["payment_failed"],
         payment_unresolved=counts["payment_unresolved"],
         cancelled=counts["cancelled"],
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /admin/analytics/storefront
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/storefront",
+    response_model=AnalyticsStorefrontResponse,
+    summary="Shopper funnel (admin)",
+    description=(
+        "The journey before an order exists: sessions, product views, carts, "
+        "checkouts and paid orders.\n\n"
+        "Sessions are counted distinctly, so ten product views by one shopper "
+        "count once.\n\n"
+        "The pre-order steps come from what browsers reported and are a **floor**, "
+        "not an exact count — blocked scripts and closed tabs lose events. The "
+        "paid step is read from the orders table and is exact. Returns "
+        "`enabled: false` with zeroes when the deployment is not collecting."
+    ),
+    responses=FUNNEL_RESPONSES,
+    dependencies=[Depends(require_admin)],
+)
+async def get_storefront_funnel(
+    date_from: date | None = Query(
+        None, alias="from", description="First day, inclusive"
+    ),
+    date_to: date | None = Query(None, alias="to", description="Last day, inclusive"),
+    session: AsyncSession = Depends(get_session_dependency),
+) -> AnalyticsStorefrontResponse:
+    period = await _resolve_period(date_from, date_to)
+    settings = get_settings()
+
+    events = StorefrontEventRepository(session)
+    counts = await events.browse_funnel(period.start, period.end)
+    page_views = await events.page_views(period.start, period.end)
+
+    # The final step is not taken from the browser's word for it. A reported
+    # checkout says the shopper pressed the button; only the orders table knows
+    # whether money arrived.
+    checkout_orders = await events.checkout_order_ids(period.start, period.end)
+    paid = await AnalyticsRepository(session).count_paid_orders(checkout_orders)
+
+    definitions = [
+        ("sessions", "Visited the shop", counts["sessions"]),
+        ("viewed_product", "Viewed a product", counts["viewed_product"]),
+        ("added_to_cart", "Added to cart", counts["added_to_cart"]),
+        ("started_checkout", "Started checkout", counts["started_checkout"]),
+        ("paid", "Paid", paid),
+    ]
+
+    total = counts["sessions"]
+    steps: list[StorefrontStep] = []
+    previous: int | None = None
+    for key, label, value in definitions:
+        steps.append(
+            StorefrontStep(
+                step=key,
+                label=label,
+                sessions=value,
+                conversion_from_start=round(value / total, 4) if total else None,
+                drop_off_from_previous=(
+                    None if previous is None else max(previous - value, 0)
+                ),
+            )
+        )
+        previous = value
+
+    interest = await events.product_interest(period.start, period.end)
+    names = await AnalyticsRepository(session).item_names(
+        [row["sku"] for row in interest]
+    )
+
+    return AnalyticsStorefrontResponse(
+        success=True,
+        message="Storefront funnel retrieved successfully",
+        period=_period_info(period),
+        enabled=settings.storefront_analytics_enabled,
+        page_views=page_views,
+        steps=steps,
+        top_paths=[
+            PathViews(**row) for row in await events.top_paths(period.start, period.end)
+        ],
+        product_interest=[
+            ProductInterest(**row, name=names.get(row["sku"])) for row in interest
+        ],
     )

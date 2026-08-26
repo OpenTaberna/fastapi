@@ -404,6 +404,25 @@ class AnalyticsRepository:
             "cancelled": cancelled,
         }
 
+    async def count_paid_orders(self, order_ids: list) -> int:
+        """
+        How many of these orders were actually paid.
+
+        Used to close the storefront funnel. A browser reporting "checkout
+        started" only means a button was pressed; whether money arrived is
+        knowable solely from the orders table, so the last step of a funnel
+        built from browser events is deliberately not taken from browser events.
+        """
+        if not order_ids:
+            return 0
+        return await self._scalar(
+            select(func.count(distinct(OrderDB.id))).where(
+                OrderDB.id.in_(order_ids),
+                OrderDB.deleted_at.is_(None),
+                OrderDB.status.in_(EARNED_STATUSES),
+            )
+        )
+
     async def _scalar(self, statement: Select) -> int:
         result = await self._session.execute(statement)
         return int(result.scalar_one_or_none() or 0)

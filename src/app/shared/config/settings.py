@@ -272,6 +272,15 @@ class Settings(BaseSettings):
     )
 
     # Analytics / reporting
+    storefront_analytics_enabled: bool = Field(
+        default=False,
+        description=(
+            "Accept anonymous shopper events from the storefront. Off by "
+            "default: cloning OpenTaberna must not silently start collecting "
+            "anything, even something that identifies nobody. The ingest "
+            "endpoint returns 404 while this is false."
+        ),
+    )
     shop_timezone: str = Field(
         default="Europe/Berlin",
         description=(

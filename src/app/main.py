@@ -16,6 +16,7 @@ from app.services.health import health_api_router
 from app.services.inventory import inventory_api_router
 from app.services.orders import orders_api_router, webhooks_api_router
 from app.services.returns import admin_returns_api_router, returns_api_router
+from app.services.storefront_analytics import storefront_analytics_api_router
 from app.shared.exceptions import AppException, InternalError
 from app.shared.logger import get_logger
 from app.shared.middleware import CorrelationIDMiddleware
@@ -155,6 +156,9 @@ app.include_router(admin_api_router, prefix="/v1")
 
 # Include analytics service router (S1)
 app.include_router(analytics_api_router, prefix="/v1")
+
+# Include storefront analytics ingest (S2) — public, rate limited, opt-in
+app.include_router(storefront_analytics_api_router, prefix="/v1")
 
 # Include fulfillment service router (Phase 3)
 app.include_router(fulfillment_api_router, prefix="/v1")
