@@ -14,7 +14,15 @@ Design decisions:
 
 from uuid import UUID, uuid4
 
-from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, Integer, String, text
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -84,6 +92,12 @@ class OrderDB(Base, TimestampMixin, SoftDeleteMixin):
         CheckConstraint(
             "total_amount >= 0", name="ck_orders_total_amount_non_negative"
         ),
+        # Analytics aggregates every query by creation date, and most also
+        # filter by status. ix_orders_status alone does not help a date range,
+        # and scanning the whole order history per dashboard load does not stay
+        # cheap as the shop grows.
+        Index("ix_orders_created_at", "created_at"),
+        Index("ix_orders_status_created_at", "status", "created_at"),
     )
 
     def __repr__(self) -> str:
@@ -149,6 +163,8 @@ class OrderItemDB(Base, TimestampMixin):
         CheckConstraint(
             "unit_price >= 0", name="ck_order_items_unit_price_non_negative"
         ),
+        # Product performance groups by sku across the whole line history.
+        Index("ix_order_items_sku", "sku"),
     )
 
     def __repr__(self) -> str:

@@ -271,6 +271,16 @@ class Settings(BaseSettings):
         description="Default label format requested from DHL: 'pdf' or 'zpl'",
     )
 
+    # Analytics / reporting
+    shop_timezone: str = Field(
+        default="Europe/Berlin",
+        description=(
+            "IANA timezone the shop trades in. Analytics buckets days in this "
+            "zone rather than UTC, so 'today' matches the operator's day "
+            "instead of drifting for evening orders."
+        ),
+    )
+
     # ARQ worker / job queue
     arq_max_jobs: int = Field(
         default=10,
