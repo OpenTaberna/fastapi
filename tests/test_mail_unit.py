@@ -11,10 +11,11 @@ from app.services.mail.models.mail_models import (
     MailFlag,
     MailMessagePage,
     SendMailRequest,
+    UpdateFlagsRequest,
 )
 from app.services.mail.adapters.imap_smtp_adapter import ImapSmtpMailAdapter
 from app.shared.config.settings import Settings
-from app.services.mail.services import get_mail_adapter
+from app.services.mail.services import MailService, get_mail_service
 
 
 def test_send_request_requires_a_body():
@@ -32,21 +33,36 @@ def test_flags_are_stable_api_values():
     assert MailFlag.FLAGGED.value == "flagged"
 
 
-def test_list_messages_endpoint_uses_adapter():
-    adapter = AsyncMock()
-    adapter.list_messages.return_value = MailMessagePage(
+def test_list_messages_endpoint_uses_service():
+    service = AsyncMock(spec=MailService)
+    service.list_messages.return_value = MailMessagePage(
         messages=[], total=0, offset=0, limit=10
     )
     app = FastAPI()
     app.include_router(mail_api_router, prefix="/v1")
     app.dependency_overrides[require_admin] = lambda: {"sub": "admin"}
-    app.dependency_overrides[get_mail_adapter] = lambda: adapter
+    app.dependency_overrides[get_mail_service] = lambda: service
 
     response = TestClient(app).get("/v1/admin/mail/folders/INBOX/messages?limit=10")
 
     assert response.status_code == 200
     assert response.json()["messages"] == []
-    adapter.list_messages.assert_awaited_once_with("INBOX", 0, 10, None)
+    service.list_messages.assert_awaited_once_with("INBOX", 0, 10, None)
+
+
+@pytest.mark.asyncio
+async def test_mail_service_converts_flags_for_adapter():
+    adapter = AsyncMock()
+    settings = Settings()
+    service = MailService(adapter, settings)
+
+    await service.update_flags(
+        "INBOX",
+        7,
+        UpdateFlagsRequest(add=[MailFlag.SEEN], remove=[MailFlag.FLAGGED]),
+    )
+
+    adapter.update_flags.assert_awaited_once_with("INBOX", 7, ["seen"], ["flagged"])
 
 
 def test_sent_message_contains_date_header():
