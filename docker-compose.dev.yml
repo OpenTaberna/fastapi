@@ -11,6 +11,8 @@ services:
       KEYCLOAK_URL: http://opentaberna-keycloak:8080
       KEYCLOAK_PUBLIC_URL: http://localhost:8080
       STORAGE_ENDPOINT_URL: http://opentaberna-minio:9000
+    volumes:
+      - stripe_webhook_secret:/run/secrets:ro
     ports:
       - "8000:8000"
     restart: unless-stopped
@@ -22,10 +24,33 @@ services:
       retries: 5
       start_period: 20s
     depends_on:
-      - opentaberna-db
-      - opentaberna-redis
-      - opentaberna-keycloak
-      - opentaberna-minio
+      opentaberna-db:
+        condition: service_started
+      opentaberna-redis:
+        condition: service_started
+      opentaberna-keycloak:
+        condition: service_started
+      opentaberna-minio:
+        condition: service_started
+      opentaberna-stripe-listener:
+        condition: service_started
+
+  opentaberna-stripe-listener:
+    build:
+      context: .
+      dockerfile: src/docker/stripe-listener/Dockerfile
+    image: opentaberna-stripe-listener:latest
+    env_file: .env
+    volumes:
+      - stripe_webhook_secret:/run/secrets
+    restart: unless-stopped
+    container_name: opentaberna-stripe-listener
+    healthcheck:
+      test: ["CMD-SHELL", "test -s /run/secrets/stripe_webhook_secret"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+      start_period: 5s
 
   opentaberna-db:
     image: postgres:17-alpine
@@ -171,3 +196,4 @@ services:
 
 volumes:
   keycloak_data:
+  stripe_webhook_secret:

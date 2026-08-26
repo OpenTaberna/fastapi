@@ -27,8 +27,13 @@ To test the Setup:
 Take a look at the `docker-compose.dev.yml` file. It provides a dev docker setup for local development. Run:
 
 ```bash
-docker compose up -f docker-compose.dev.yml -d
+docker compose -f docker-compose.dev.yml up -d
 ```
+
+The development stack also starts a Stripe CLI listener. Set a Stripe test-mode
+`STRIPE_SECRET_KEY` in `.env`; the listener forwards payment-intent events to
+the API and provides its generated webhook signing secret automatically. No
+manual `stripe listen` process or `STRIPE_WEBHOOK_SECRET` copy is required.
 
 # Pipelines
 
