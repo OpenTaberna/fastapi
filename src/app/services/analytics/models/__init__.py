@@ -2,6 +2,7 @@
 
 from .analytics_models import (
     AnalyticsFunnelResponse,
+    AnalyticsStorefrontResponse,
     AnalyticsProductsResponse,
     AnalyticsSummaryResponse,
     AnalyticsTimeseriesResponse,
@@ -11,13 +12,17 @@ from .analytics_models import (
     CurrencyTotalsPrevious,
     FunnelStep,
     NeverSoldItem,
+    PathViews,
     PeriodInfo,
+    ProductInterest,
     ProductPerformance,
     SeriesPoint,
+    StorefrontStep,
 )
 
 __all__ = [
     "AnalyticsFunnelResponse",
+    "AnalyticsStorefrontResponse",
     "AnalyticsProductsResponse",
     "AnalyticsSummaryResponse",
     "AnalyticsTimeseriesResponse",
@@ -27,7 +32,10 @@ __all__ = [
     "CurrencyTotalsPrevious",
     "FunnelStep",
     "NeverSoldItem",
+    "PathViews",
     "PeriodInfo",
+    "ProductInterest",
     "ProductPerformance",
     "SeriesPoint",
+    "StorefrontStep",
 ]

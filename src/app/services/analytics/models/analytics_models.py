@@ -241,4 +241,71 @@ class AnalyticsFunnelResponse(BaseResponse):
     cancelled: int = Field(description="Orders cancelled in the window")
 
 
+# ============================================================================
+# Storefront funnel (S2)
+# ============================================================================
+
+
+class StorefrontStep(BaseModel):
+    """One stage of the shopper journey, counted in sessions."""
+
+    step: str
+    label: str
+    sessions: int
+    conversion_from_start: float | None = Field(
+        default=None, description="Share of all sessions that reached this step"
+    )
+    drop_off_from_previous: int | None = Field(
+        default=None, description="Sessions lost between the previous step and this"
+    )
+
+
+class PathViews(BaseModel):
+    """Traffic to one route."""
+
+    path: str
+    views: int
+    sessions: int
+
+
+class ProductInterest(BaseModel):
+    """
+    How a product fares before the checkout.
+
+    A SKU viewed often and added rarely is the useful case: the listing draws
+    people in and something then turns them away. Sales figures cannot show
+    this, because they only ever contain what did sell.
+    """
+
+    sku: str
+    name: str | None = None
+    sessions_viewed: int
+    sessions_added: int
+    add_to_cart_rate: float | None = None
+
+
+class AnalyticsStorefrontResponse(BaseResponse):
+    """
+    The shopper funnel, from arriving at the shop through to a paid order.
+
+    Sessions are counted distinctly, so ten product views by one shopper are one
+    person considering a purchase rather than ten.
+
+    **This depends on what browsers reported.** Blocked scripts, a closed tab
+    before the batch flushed and disabled JavaScript all lose events, so the
+    pre-order steps are a floor rather than an exact count. The paid step is
+    read from the orders table and is exact — which is why the two are labelled
+    differently rather than presented as one continuous measurement.
+    """
+
+    period: PeriodInfo
+    enabled: bool = Field(
+        description="Whether the deployment is collecting storefront events at all"
+    )
+    page_views: int
+    steps: list[StorefrontStep] = Field(default_factory=list)
+    top_paths: list[PathViews] = Field(default_factory=list)
+    product_interest: list[ProductInterest] = Field(default_factory=list)
+
+
 CurrencyTotals.model_rebuild()
