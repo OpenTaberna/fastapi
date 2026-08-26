@@ -13,6 +13,7 @@ services:
       STORAGE_ENDPOINT_URL: http://opentaberna-minio:9000
       OTEL_EXPORTER_OTLP_ENDPOINT: http://opentaberna-otel-collector:4318
       OTEL_SERVICE_NAME: opentaberna-api
+      PAPERLESS_URL: http://opentaberna-paperless:8000
     volumes:
       - stripe_webhook_secret:/run/secrets:ro
     ports:
@@ -36,6 +37,8 @@ services:
         condition: service_started
       opentaberna-stripe-listener:
         condition: service_started
+      opentaberna-paperless:
+        condition: service_healthy
 
   opentaberna-stripe-listener:
     build:
@@ -211,6 +214,65 @@ services:
       - "8081:8080" # GreenMail web UI
     restart: unless-stopped
 
+  opentaberna-paperless:
+    image: ghcr.io/paperless-ngx/paperless-ngx:2.20.15
+    environment:
+      PAPERLESS_REDIS: redis://opentaberna-paperless-redis:6379
+      PAPERLESS_DBHOST: opentaberna-paperless-db
+      PAPERLESS_DBNAME: paperless
+      PAPERLESS_DBUSER: paperless
+      PAPERLESS_DBPASS: ${PAPERLESS_DB_PASSWORD:-paperless}
+      PAPERLESS_TIME_ZONE: Europe/Berlin
+      PAPERLESS_URL: http://localhost:8010
+      PAPERLESS_SECRET_KEY: ${PAPERLESS_SECRET_KEY:-change-me-in-development}
+      PAPERLESS_ADMIN_USER: ${PAPERLESS_ADMIN_USER:-admin}
+      PAPERLESS_ADMIN_PASSWORD: ${PAPERLESS_ADMIN_PASSWORD:-admin}
+    volumes:
+      - paperless_data:/usr/src/paperless/data
+      - paperless_media:/usr/src/paperless/media
+      - paperless_consume:/usr/src/paperless/consume
+    ports:
+      - "8010:8000"
+    restart: unless-stopped
+    healthcheck:
+      # /api/status requires a token; use the public login page for liveness.
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/accounts/login/"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    depends_on:
+      opentaberna-paperless-db:
+        condition: service_healthy
+      opentaberna-paperless-redis:
+        condition: service_healthy
+
+  opentaberna-paperless-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: paperless
+      POSTGRES_USER: paperless
+      POSTGRES_PASSWORD: ${PAPERLESS_DB_PASSWORD:-paperless}
+    volumes:
+      - paperless_postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U paperless -d paperless"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  opentaberna-paperless-redis:
+    image: redis:8-alpine
+    volumes:
+      - paperless_redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # --------------------------------------------------------------------
   # Observability (S3). Self-hosted by default; the collector is the seam,
   # so pointing OTEL_EXPORTER_OTLP_ENDPOINT at a vendor replaces all three
@@ -269,3 +331,8 @@ volumes:
   stripe_webhook_secret:
   prometheus_data:
   grafana_data:
+  paperless_data:
+  paperless_media:
+  paperless_consume:
+  paperless_postgres_data:
+  paperless_redis_data:

@@ -7,6 +7,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from app.chore import lifespan
+from app.services.accounting import accounting_api_router
 from app.services.admin import admin_api_router
 from app.services.analytics import analytics_api_router
 from app.services.crud_item_store import router as item_store_router
@@ -190,6 +191,9 @@ app.include_router(admin_returns_api_router, prefix="/v1")
 
 # Provider-neutral mailbox endpoints for the admin webmail client
 app.include_router(mail_api_router, prefix="/v1")
+
+# Provider-neutral accounting document endpoints for the admin frontend
+app.include_router(accounting_api_router, prefix="/v1")
 
 # Include health check endpoints (Phase 4.1)
 app.include_router(health_api_router)
