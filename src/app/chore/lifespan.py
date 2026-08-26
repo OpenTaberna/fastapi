@@ -14,6 +14,8 @@ from app.shared.config import get_settings
 from app.shared.database.base import Base
 from app.shared.database.engine import close_database, get_engine, init_database
 from app.shared.logger import get_logger
+from app.shared.observability import instrument_engine
+from app.shared.observability import setup as setup_telemetry
 from app.shared.storage.minio_adapter import build_minio_adapter
 
 logger = get_logger(__name__)
@@ -43,9 +45,16 @@ async def lifespan(app: FastAPI):
     # Startup: validate secrets before doing anything else
     _validate_critical_secrets()
 
+    # Telemetry before anything else, so startup itself is traced. A disabled
+    # or unreachable collector logs a warning and the API starts regardless —
+    # observability must not be able to cause the outage it exists to diagnose.
+    settings = get_settings()
+    setup_telemetry(settings)
+
     # Startup: Initialize database and create tables
     await init_database()
     engine = get_engine()
+    instrument_engine(engine, settings)
     async with engine.begin() as conn:
         # This creates all tables from SQLAlchemy models that inherit from Base
         await conn.run_sync(Base.metadata.create_all)

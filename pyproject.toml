@@ -36,6 +36,12 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.49",
     "stripe>=15.0.1",
     "uvicorn>=0.43.0",
+    "opentelemetry-sdk>=1.44.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.44.0",
+    "opentelemetry-instrumentation-fastapi>=0.65b0",
+    "opentelemetry-instrumentation-sqlalchemy>=0.65b0",
+    "opentelemetry-instrumentation-redis>=0.65b0",
+    "opentelemetry-instrumentation-httpx>=0.65b0",
 ]
 
 [project.optional-dependencies]

@@ -1,0 +1,13 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # The collector re-exposes everything the API and worker sent over OTLP.
+  - job_name: opentaberna
+    static_configs:
+      - targets: ['opentaberna-otel-collector:8889']
+
+  - job_name: collector-self
+    static_configs:
+      - targets: ['opentaberna-otel-collector:8888']
