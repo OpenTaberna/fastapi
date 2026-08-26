@@ -42,6 +42,11 @@ from app.services.fulfillment.outbox.models.outbox_db_models import OutboxEventD
 # Returns (RMA)
 from app.services.returns.models.returns_db_models import ReturnDB  # noqa: F401
 
+# Frontend errors (S4)
+from app.services.frontend_errors.models.frontend_errors_db_models import (  # noqa: F401
+    FrontendErrorDB,
+)
+
 # Storefront analytics (S2)
 from app.services.storefront_analytics.models.storefront_events_db_models import (  # noqa: F401
     StorefrontEventDB,

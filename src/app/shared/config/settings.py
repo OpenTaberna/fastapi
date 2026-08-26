@@ -323,6 +323,14 @@ class Settings(BaseSettings):
             "endpoint returns 404 while this is false."
         ),
     )
+    frontend_errors_enabled: bool = Field(
+        default=False,
+        description=(
+            "Accept uncaught error reports from the frontends. Off by default, "
+            "for the same reason as storefront analytics. The report endpoint "
+            "returns 404 while this is false."
+        ),
+    )
     shop_timezone: str = Field(
         default="Europe/Berlin",
         description=(

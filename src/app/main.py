@@ -12,6 +12,10 @@ from app.services.analytics import analytics_api_router
 from app.services.crud_item_store import router as item_store_router
 from app.services.customers import customers_api_router
 from app.services.fulfillment import fulfillment_api_router
+from app.services.frontend_errors import (
+    admin_frontend_errors_api_router,
+    frontend_errors_api_router,
+)
 from app.services.health import health_api_router
 from app.services.inventory import inventory_api_router
 from app.services.mail import mail_api_router
@@ -169,6 +173,10 @@ app.include_router(admin_api_router, prefix="/v1")
 
 # Include analytics service router (S1)
 app.include_router(analytics_api_router, prefix="/v1")
+
+# Include frontend error reporting (S4) — public ingest plus admin read
+app.include_router(frontend_errors_api_router, prefix="/v1")
+app.include_router(admin_frontend_errors_api_router, prefix="/v1")
 
 # Include storefront analytics ingest (S2) — public, rate limited, opt-in
 app.include_router(storefront_analytics_api_router, prefix="/v1")

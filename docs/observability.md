@@ -131,3 +131,78 @@ which looks like a working panel. That mistake is already made and fixed here.
   output and Prometheus, not against the fact that setup was called. That
   distinction caught the real bug: instrumenting the app before configuring
   telemetry logged a clean start and produced no HTTP metrics at all.
+
+---
+
+# Frontend Errors
+
+Uncaught errors from the storefront and the admin UI.
+
+Traces and metrics see nothing that happens in a browser. A component that
+throws leaves the server returning 200 with healthy metrics while the shop is
+broken for a real customer — and for a shop, by the time someone reports it the
+sale is gone.
+
+```
+POST /v1/telemetry/errors        report (public, rate limited, opt-in)
+GET  /v1/admin/telemetry/errors  read, grouped (admin)
+```
+
+## Public, and treated as such
+
+Storefront visitors are not signed in, and an error that happens before login is
+exactly the one worth catching — so the report endpoint takes no token. It is
+therefore hostile-input territory:
+
+| Guard | Why |
+|---|---|
+| 30 requests/minute per address | A component throwing in a render loop reports as fast as the browser can loop |
+| 10 errors per batch | One request cannot be a bulk insert |
+| Closed `app` vocabulary | The field cannot become free text |
+| `extra="forbid"` | Unknown fields are refused, not ignored |
+| Stack truncated at 4000 chars | Unbounded input, and the top frames are where the fault is |
+| Off unless `FRONTEND_ERRORS_ENABLED` | Returns 404 while off |
+
+## The user agent is reduced, never stored
+
+A raw user-agent string is a fingerprint. But "which browser?" is genuinely
+diagnostic — a large share of frontend bugs are one engine behaving differently
+— so discarding it entirely makes the reports much weaker.
+
+The compromise: reduce it at the boundary to a family and major version, and
+store only that. `Safari 18` reproduces a bug; it does not recognise anyone.
+
+The reduction is also a filter. Whatever a client sends, the output is a known
+family name and an integer — never a fragment of the input:
+
+```
+"Mozilla/5.0 Chrome/140 user=alice@example.com token=abc123"  →  "Chrome 140"
+```
+
+There is no column for an IP address, an email or a customer id, and a test
+fails if one appears.
+
+## Errors are grouped
+
+One bug produces thousands of identical rows, so the read endpoint groups by
+application, error class and message, ordered by frequency.
+
+Deliberately **not** grouped by stack: the same fault reached from two routes
+produces two different stacks and is one bug. `affected_paths` shows the spread
+instead, and one representative stack is returned for debugging.
+
+## What this cannot tell you
+
+It reports only what browsers managed to send. An error that breaks a page badly
+enough to stop the reporter is precisely the one that will not appear — so a
+quiet report is weaker evidence than a noisy one. Read silence as "no news",
+never as "no errors".
+
+## Testing
+
+- `tests/test_frontend_errors_unit.py` — the user-agent reduction, including
+  Edge not being reported as Chrome, and that nothing from the input string
+  survives it.
+- `tests/test_frontend_errors_integration.py` — reporting without auth, the
+  PII-column assertion, the raw agent never reaching storage, query-string
+  stripping, stale timestamps, and grouping across routes.
