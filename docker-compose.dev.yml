@@ -194,6 +194,19 @@ services:
       opentaberna-minio:
         condition: service_healthy
 
+  opentaberna-mail:
+    image: greenmail/standalone:2.1.3
+    environment:
+      GREENMAIL_OPTS: >-
+        -Dgreenmail.setup.test.all
+        -Dgreenmail.hostname=0.0.0.0
+        -Dgreenmail.users=admin:admin@example.com
+    ports:
+      - "3025:3025" # SMTP
+      - "3143:3143" # IMAP
+      - "8081:8080" # GreenMail web UI
+    restart: unless-stopped
+
 volumes:
   keycloak_data:
   stripe_webhook_secret:
