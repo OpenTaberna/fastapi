@@ -296,6 +296,22 @@ return not_found(message="User not found", ...)
 
 ## FastAPI Integration
 
+## Mail service usage
+
+The admin mail service follows the shared response contract for every JSON
+success response. Status, folder, message, message-page, and send-result models
+are returned as `DataResponse[T]`. See [`mail.md`](mail.md) for the complete
+endpoint mapping.
+
+Generic success models deliberately do not define a fixed OpenAPI example for
+`data`: its structure depends on `T`. Swagger derives the example from each
+concrete specialization, such as `DataResponse[SendMailResponse]`, so documented
+fields match the endpoint's actual response.
+
+Binary attachment downloads and `204 No Content` mutation responses are not
+wrapped because they do not contain a JSON resource body. Mail errors continue
+to use the shared error models through the global exception handlers.
+
 ### Basic Endpoint
 
 ```python

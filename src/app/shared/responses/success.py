@@ -6,7 +6,9 @@ Uses TypeVar for generic type safety.
 """
 
 from typing import Generic, Optional, TypeVar
-from pydantic import Field, ConfigDict
+
+from pydantic import ConfigDict, Field
+
 from .base import BaseResponse
 
 # Generic type variable for type-safe responses
@@ -31,16 +33,9 @@ class SuccessResponse(BaseResponse, Generic[T]):
 
     data: Optional[T] = Field(None, description="Response data of generic type T")
 
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "success": True,
-                "message": "User retrieved successfully",
-                "data": {"id": 1, "name": "John Doe", "email": "john@example.com"},
-                "timestamp": "2025-12-07T12:00:00Z",
-            }
-        }
-    )
+    # A generic response cannot provide a correct example for an arbitrary T.
+    # Leaving the example unset lets OpenAPI generate it from the concrete type.
+    model_config = ConfigDict(json_schema_extra=None)
 
 
 class MessageResponse(BaseResponse):
@@ -83,13 +78,6 @@ class DataResponse(SuccessResponse[T], Generic[T]):
 
     data: T = Field(..., description="Required response data of generic type T")
 
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "success": True,
-                "message": "Data retrieved successfully",
-                "data": {"id": 1, "value": "example"},
-                "timestamp": "2025-12-07T12:00:00Z",
-            }
-        }
-    )
+    # Do not hard-code the shape of T. Swagger derives `data` from the concrete
+    # specialization, e.g. DataResponse[SendMailResponse].
+    model_config = ConfigDict(json_schema_extra=None)
