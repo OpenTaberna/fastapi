@@ -403,6 +403,12 @@ async def get_storefront_funnel(
         None, alias="from", description="First day, inclusive"
     ),
     date_to: date | None = Query(None, alias="to", description="Last day, inclusive"),
+    limit: int = Query(
+        10,
+        ge=1,
+        le=_MAX_PRODUCT_ROWS,
+        description="Rows returned in top_paths and product_interest",
+    ),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> AnalyticsStorefrontResponse:
     period = await _resolve_period(date_from, date_to)
@@ -443,7 +449,7 @@ async def get_storefront_funnel(
         )
         previous = value
 
-    interest = await events.product_interest(period.start, period.end)
+    interest = await events.product_interest(period.start, period.end, limit=limit)
     names = await AnalyticsRepository(session).item_names(
         [row["sku"] for row in interest]
     )
@@ -456,7 +462,8 @@ async def get_storefront_funnel(
         page_views=page_views,
         steps=steps,
         top_paths=[
-            PathViews(**row) for row in await events.top_paths(period.start, period.end)
+            PathViews(**row)
+            for row in await events.top_paths(period.start, period.end, limit=limit)
         ],
         product_interest=[
             ProductInterest(**row, name=names.get(row["sku"])) for row in interest

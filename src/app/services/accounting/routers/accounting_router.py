@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile,
 from app.services.admin.dependencies import require_admin
 from app.shared.responses import DataResponse
 
+from ..functions import build_document_filters
 from ..dependencies import AccountingOperationsDependency
 from ..models import (
     AccountingStatus,
@@ -47,18 +48,17 @@ async def list_documents(
     tags: list[int] | None = Query(None),
     ordering: str | None = Query(None, max_length=100),
 ) -> DataResponse[PaperlessPage]:
-    params = {
-        "page": page,
-        "page_size": page_size,
-        "text": query,
-        "correspondent__id": correspondent,
-        "document_type__id": document_type,
-        "storage_path__id": storage_path,
-        "tags__id__all": ",".join(map(str, tags)) if tags else None,
-        "ordering": ordering,
-    }
     data = await operations.list_documents(
-        {k: v for k, v in params.items() if v is not None}
+        build_document_filters(
+            page=page,
+            page_size=page_size,
+            query=query,
+            correspondent=correspondent,
+            document_type=document_type,
+            storage_path=storage_path,
+            tags=tags,
+            ordering=ordering,
+        )
     )
     return DataResponse(
         data=PaperlessPage.model_validate(data), message="Documents retrieved"
