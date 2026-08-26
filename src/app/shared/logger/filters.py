@@ -90,6 +90,7 @@ class CorrelationIdFilter(ILogFilter):
     """
 
     ATTRIBUTE = "correlation_id"
+    TRACE_ATTRIBUTE = "trace_id"
 
     def filter(self, record: logging.LogRecord) -> bool:
         """Never blocks — only enriches the record."""
@@ -100,6 +101,15 @@ class CorrelationIdFilter(ILogFilter):
 
         if not hasattr(record, self.ATTRIBUTE):
             setattr(record, self.ATTRIBUTE, get_correlation_id())
+
+        # The trace id is what joins a span found in Grafana to the log lines
+        # for that same request. Without it the two systems describe the same
+        # work and cannot be put side by side. Empty when tracing is off, so
+        # the field is always present and a formatter never KeyErrors.
+        if not hasattr(record, self.TRACE_ATTRIBUTE):
+            from app.shared.observability import current_trace_id
+
+            setattr(record, self.TRACE_ATTRIBUTE, current_trace_id() or "")
         return True
 
     def sanitize(self, data: Dict[str, Any]) -> Dict[str, Any]:

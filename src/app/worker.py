@@ -53,6 +53,8 @@ from app.services.fulfillment.outbox.services.outbox_db_service import (
 )
 from app.shared.config import get_settings
 from app.shared.logger import get_logger
+from app.shared.observability import collect_business_metrics, instrument_engine
+from app.shared.observability import setup as setup_telemetry
 from app.shared.storage.minio_adapter import build_minio_adapter
 
 logger = get_logger(__name__)
@@ -79,12 +81,18 @@ async def startup(ctx: dict) -> None:
     settings = get_settings()
     ctx["settings"] = settings
 
+    # The worker is where fulfillment actually happens, so it needs tracing at
+    # least as much as the API does — a label job that hangs against a carrier
+    # is invisible from the HTTP side entirely.
+    setup_telemetry(settings)
+
     engine = create_async_engine(
         settings.database_url,
         pool_size=settings.database_pool_size,
         max_overflow=settings.database_max_overflow,
         pool_pre_ping=settings.database_pool_pre_ping,
     )
+    instrument_engine(engine, settings)
     ctx["session_factory"] = async_sessionmaker(engine, expire_on_commit=False)
 
     ctx["carrier_adapters"] = {
@@ -320,6 +328,32 @@ async def on_job_abort(ctx: dict, job_id: str, function: str, args, kwargs) -> N
 # ---------------------------------------------------------------------------
 
 
+async def export_business_metrics(ctx: dict) -> None:
+    """
+    Publish the queue gauges an operator needs to alert on.
+
+    Runs here rather than in the metrics SDK's own collection callback: that
+    callback executes on the SDK's thread, and the only database engine this
+    application has is asynchronous. Driving it from outside the event loop
+    fails, which is what the first version of this did — the gauges registered
+    cleanly and then silently produced nothing.
+
+    The worker is the right home anyway. It already runs a scheduler, already
+    holds an async session, and is the process that most needs to be alive for
+    these numbers to mean anything.
+    """
+    settings = ctx["settings"]
+    if not settings.otel_enabled:
+        return
+
+    session_factory = ctx["session_factory"]
+    async with session_factory() as session:
+        values = await collect_business_metrics(session, settings)
+
+    if values:
+        logger.debug("Business metrics exported", extra=values)
+
+
 def _build_outbox_cron(coroutine) -> CronJob:
     """
     Build the outbox poller CronJob honouring settings.outbox_poll_interval.
@@ -410,6 +444,10 @@ class WorkerSettings:
         _build_outbox_cron(poll_outbox),
         # Phase 4.2 — release expired stock reservations every 5 minutes
         cron(expire_reservations_sweep, minute={*range(0, 60, 5)}, second=0),
+        # S3 — publish queue gauges every 30 seconds. Cheap: five counts over
+        # indexed status columns, and it does nothing at all when OTEL_ENABLED
+        # is false.
+        cron(export_business_metrics, second={0, 30}),
     ]
 
     on_startup = startup

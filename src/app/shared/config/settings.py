@@ -288,6 +288,31 @@ class Settings(BaseSettings):
         description="Default label format requested from DHL: 'pdf' or 'zpl'",
     )
 
+    # OpenTelemetry — see app/shared/observability
+    otel_enabled: bool = Field(
+        default=False,
+        description=(
+            "Export traces and metrics over OTLP. Off by default: a deployment "
+            "that has not opted in must send nothing anywhere."
+        ),
+    )
+    otel_exporter_otlp_endpoint: str = Field(
+        default="http://opentaberna-otel-collector:4318",
+        description=(
+            "OTLP/HTTP endpoint. This is the seam — pointing it at a vendor's "
+            "collector is the whole change needed to use one, because no "
+            "application code imports a vendor SDK."
+        ),
+    )
+    otel_service_name: str = Field(
+        default="opentaberna-api",
+        description="service.name on every span and metric",
+    )
+    otel_metric_export_interval_seconds: int = Field(
+        default=30,
+        description="Seconds between metric exports",
+    )
+
     # Analytics / reporting
     storefront_analytics_enabled: bool = Field(
         default=False,

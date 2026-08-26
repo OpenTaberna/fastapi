@@ -11,6 +11,8 @@ services:
       KEYCLOAK_URL: http://opentaberna-keycloak:8080
       KEYCLOAK_PUBLIC_URL: http://localhost:8080
       STORAGE_ENDPOINT_URL: http://opentaberna-minio:9000
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://opentaberna-otel-collector:4318
+      OTEL_SERVICE_NAME: opentaberna-api
     volumes:
       - stripe_webhook_secret:/run/secrets:ro
     ports:
@@ -178,6 +180,8 @@ services:
     environment:
       REDIS_URL: redis://opentaberna-redis:6379/0
       STORAGE_ENDPOINT_URL: http://opentaberna-minio:9000
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://opentaberna-otel-collector:4318
+      OTEL_SERVICE_NAME: opentaberna-worker
     restart: unless-stopped
     container_name: opentaberna-worker
     healthcheck:
@@ -207,6 +211,61 @@ services:
       - "8081:8080" # GreenMail web UI
     restart: unless-stopped
 
+  # --------------------------------------------------------------------
+  # Observability (S3). Self-hosted by default; the collector is the seam,
+  # so pointing OTEL_EXPORTER_OTLP_ENDPOINT at a vendor replaces all three
+  # without touching application code.
+  # --------------------------------------------------------------------
+
+  opentaberna-otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.116.1
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ./src/docker/observability/otel-collector.yaml:/etc/otel/config.yaml:ro
+    ports:
+      - "4318:4318"   # OTLP/HTTP
+      - "8889:8889"   # Prometheus scrape target
+    restart: unless-stopped
+    container_name: opentaberna-otel-collector
+
+  opentaberna-prometheus:
+    image: prom/prometheus:v3.1.0
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
+    volumes:
+      - ./src/docker/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+    container_name: opentaberna-prometheus
+    depends_on:
+      - opentaberna-otel-collector
+
+  opentaberna-grafana:
+    image: grafana/grafana:11.4.0
+    environment:
+      # Development only. The dashboard is read-only and carries no secrets,
+      # and requiring a login to look at a latency graph on your own laptop
+      # helps nobody.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_USERS_DEFAULT_THEME: light
+    volumes:
+      - ./src/docker/observability/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./src/docker/observability/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    restart: unless-stopped
+    container_name: opentaberna-grafana
+    depends_on:
+      - opentaberna-prometheus
+
 volumes:
   keycloak_data:
   stripe_webhook_secret:
+  prometheus_data:
+  grafana_data:

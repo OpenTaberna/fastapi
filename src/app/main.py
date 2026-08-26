@@ -21,6 +21,8 @@ from app.services.storefront_analytics import storefront_analytics_api_router
 from app.shared.exceptions import AppException, InternalError
 from app.shared.logger import get_logger
 from app.shared.middleware import CorrelationIDMiddleware
+from app.shared.observability import instrument_app
+from app.shared.observability import setup as setup_telemetry
 from app.shared.rate_limit import limiter
 from app.shared.responses import ErrorResponse, ValidationErrorResponse
 from app.shared.config import get_settings
@@ -126,6 +128,16 @@ async def generic_exception_handler(request: Request, exc: Exception) -> JSONRes
 
 
 origins = ["*"]  # Consider restricting this in a production environment
+
+# Telemetry must be configured before instrumenting, and this module is
+# imported long before lifespan startup runs — instrumenting first silently
+# produced no HTTP metrics at all. setup() is idempotent, so lifespan calling
+# it again is harmless.
+setup_telemetry(_settings)
+
+# Traces HTTP requests. Health endpoints are excluded inside instrument_app:
+# a liveness probe every few seconds would otherwise bury real traffic.
+instrument_app(app, _settings)
 
 app.add_middleware(CorrelationIDMiddleware)
 app.add_middleware(SlowAPIMiddleware)

@@ -39,6 +39,12 @@ class JSONFormatter(ILogFormatter):
         if correlation_id:
             log_data["correlation_id"] = correlation_id
 
+        # Promoted to a top-level field so a log backend can index it and a
+        # trace found in Grafana leads straight to these lines.
+        trace_id = getattr(record, "trace_id", "")
+        if trace_id:
+            log_data["trace_id"] = trace_id
+
         # Add context data
         context = get_log_context()
         if context:
@@ -71,6 +77,7 @@ class JSONFormatter(ILogFormatter):
                 "stack_info",
                 "taskName",
                 "correlation_id",
+                "trace_id",
             }
 
             extra_fields = {
