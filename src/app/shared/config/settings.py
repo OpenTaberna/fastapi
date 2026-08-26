@@ -224,6 +224,21 @@ class Settings(BaseSettings):
         description="Mailbox folders that API clients cannot rename or delete",
     )
 
+    # Accounting document management (Paperless-ngx)
+    paperless_url: str = Field(
+        default="",
+        description="Paperless-ngx base URL; leave empty to disable accounting",
+    )
+    paperless_token: str = Field(default="", description="Paperless-ngx API token")
+    paperless_timeout_seconds: int = Field(
+        default=30, ge=1, description="Paperless-ngx request timeout"
+    )
+    paperless_max_upload_bytes: int = Field(
+        default=50 * 1024 * 1024,
+        ge=1,
+        description="Largest accounting document accepted by the API",
+    )
+
     # Feature Flags
     feature_webhooks_enabled: bool = Field(default=False, description="Enable webhooks")
 
