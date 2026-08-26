@@ -48,6 +48,15 @@ class ImapSmtpMailAdapter(MailAdapter):
     async def list_folders(self) -> list[MailFolder]:
         return await asyncio.to_thread(self._list_folders)
 
+    async def create_folder(self, name: str) -> MailFolder:
+        return await asyncio.to_thread(self._create_folder, name)
+
+    async def rename_folder(self, folder: str, name: str) -> MailFolder:
+        return await asyncio.to_thread(self._rename_folder, folder, name)
+
+    async def delete_folder(self, folder: str) -> None:
+        await asyncio.to_thread(self._delete_folder, folder)
+
     async def list_messages(
         self, folder: str, offset: int, limit: int, query: str | None
     ) -> MailMessagePage:
@@ -70,7 +79,7 @@ class ImapSmtpMailAdapter(MailAdapter):
         await asyncio.to_thread(self._move, folder, uid, destination)
 
     async def update_flags(
-        self, folder: str, uid: int, add: list[str], remove: list[str]
+        self, folder: str, uid: int, add: list[MailFlag], remove: list[MailFlag]
     ) -> None:
         await asyncio.to_thread(self._update_flags, folder, uid, add, remove)
 
@@ -133,20 +142,47 @@ class ImapSmtpMailAdapter(MailAdapter):
         finally:
             client.logout()
 
+    def _create_folder(self, name: str) -> MailFolder:
+        client = self._imap()
+        try:
+            status, _ = client.create(name)
+            if status != "OK":
+                raise ExternalServiceError(
+                    message=f"Could not create mail folder '{name}'"
+                )
+            return MailFolder(name=name)
+        finally:
+            client.logout()
+
+    def _rename_folder(self, folder: str, name: str) -> MailFolder:
+        client = self._imap()
+        try:
+            status, _ = client.rename(folder, name)
+            if status != "OK":
+                raise NotFoundError(
+                    message=f"Mail folder '{folder}' could not be renamed"
+                )
+            return MailFolder(name=name)
+        finally:
+            client.logout()
+
+    def _delete_folder(self, folder: str) -> None:
+        client = self._imap()
+        try:
+            status, _ = client.delete(folder)
+            if status != "OK":
+                raise NotFoundError(
+                    message=f"Mail folder '{folder}' could not be deleted"
+                )
+        finally:
+            client.logout()
+
     def _list_messages(
         self, folder: str, offset: int, limit: int, query: str | None
     ) -> MailMessagePage:
         client = self._selected(folder)
         try:
-            criteria = (
-                "ALL"
-                if not query
-                else f'(OR SUBJECT "{_imap_escape(query)}" FROM "{_imap_escape(query)}")'
-            )
-            status, data = client.uid("search", None, criteria)
-            if status != "OK":
-                raise ExternalServiceError(message="IMAP message search failed")
-            uids = [int(value) for value in (data[0] or b"").split()]
+            uids = self._search_uids(client, query)
             uids.reverse()
             page = uids[offset : offset + limit]
             messages = [self._fetch(client, uid, full=False) for uid in page]
@@ -155,6 +191,24 @@ class ImapSmtpMailAdapter(MailAdapter):
             )
         finally:
             client.logout()
+
+    @staticmethod
+    def _search_uids(client, query: str | None) -> list[int]:
+        """Search compatibly without requiring provider support for IMAP OR."""
+        if not query:
+            status, data = client.uid("search", None, "ALL")
+            if status != "OK":
+                raise ExternalServiceError(message="IMAP message search failed")
+            return [int(value) for value in (data[0] or b"").split()]
+
+        matches: set[int] = set()
+        escaped = f'"{_imap_escape(query)}"'
+        for field in ("SUBJECT", "FROM"):
+            status, data = client.uid("search", None, field, escaped)
+            if status != "OK":
+                raise ExternalServiceError(message="IMAP message search failed")
+            matches.update(int(value) for value in (data[0] or b"").split())
+        return sorted(matches)
 
     def _get_message(self, folder: str, uid: int) -> MailMessage:
         client = self._selected(folder)
@@ -287,7 +341,7 @@ class ImapSmtpMailAdapter(MailAdapter):
             client.logout()
 
     def _update_flags(
-        self, folder: str, uid: int, add: list[str], remove: list[str]
+        self, folder: str, uid: int, add: list[MailFlag], remove: list[MailFlag]
     ) -> None:
         client = self._selected(folder, readonly=False)
         try:
@@ -295,7 +349,7 @@ class ImapSmtpMailAdapter(MailAdapter):
                 ("+FLAGS.SILENT", add),
                 ("-FLAGS.SILENT", remove),
             ):
-                flags = [_FLAG_TO_IMAP[value] for value in values]
+                flags = [_FLAG_TO_IMAP[value.value] for value in values]
                 if flags:
                     status, _ = client.uid(
                         "STORE", str(uid), operation, f"({' '.join(flags)})"

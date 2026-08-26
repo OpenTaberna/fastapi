@@ -219,6 +219,10 @@ class Settings(BaseSettings):
     mail_password: str = Field(default="", description="Mailbox password/app password")
     mail_from: str = Field(default="", description="From address; defaults to username")
     mail_timeout_seconds: int = Field(default=30, description="Mail server timeout")
+    mail_protected_folders: list[str] = Field(
+        default=["INBOX"],
+        description="Mailbox folders that API clients cannot rename or delete",
+    )
 
     # Feature Flags
     feature_webhooks_enabled: bool = Field(default=False, description="Enable webhooks")

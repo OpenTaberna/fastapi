@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 
 from ..models.mail_models import (
+    MailFlag,
     MailFolder,
     MailMessage,
     MailMessagePage,
@@ -13,6 +14,15 @@ from ..models.mail_models import (
 class MailAdapter(ABC):
     @abstractmethod
     async def list_folders(self) -> list[MailFolder]: ...
+
+    @abstractmethod
+    async def create_folder(self, name: str) -> MailFolder: ...
+
+    @abstractmethod
+    async def rename_folder(self, folder: str, name: str) -> MailFolder: ...
+
+    @abstractmethod
+    async def delete_folder(self, folder: str) -> None: ...
 
     @abstractmethod
     async def list_messages(
@@ -35,7 +45,7 @@ class MailAdapter(ABC):
 
     @abstractmethod
     async def update_flags(
-        self, folder: str, uid: int, add: list[str], remove: list[str]
+        self, folder: str, uid: int, add: list[MailFlag], remove: list[MailFlag]
     ) -> None: ...
 
     @abstractmethod

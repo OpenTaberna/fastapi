@@ -3,10 +3,12 @@
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, EmailStr, Field, model_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 
 class MailFlag(StrEnum):
+    """Provider-neutral message flags exposed by the HTTP API."""
+
     SEEN = "seen"
     ANSWERED = "answered"
     FLAGGED = "flagged"
@@ -15,38 +17,81 @@ class MailFlag(StrEnum):
 
 
 class MailFolder(BaseModel):
-    name: str
-    delimiter: str = "/"
-    flags: list[str] = Field(default_factory=list)
+    """A mailbox folder returned by the configured provider."""
+
+    name: str = Field(..., min_length=1, description="Provider folder name")
+    delimiter: str = Field(default="/", description="Folder hierarchy delimiter")
+    flags: list[str] = Field(
+        default_factory=list, description="Provider capabilities and folder flags"
+    )
+
+
+class CreateFolderRequest(BaseModel):
+    """Request to create a mailbox folder."""
+
+    name: str = Field(..., min_length=1, max_length=255, description="New folder name")
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        """Trim folder names and reject protocol control characters."""
+        value = value.strip()
+        if not value:
+            raise ValueError("folder name must not be blank")
+        if any(character in value for character in ("\x00", "\r", "\n")):
+            raise ValueError("folder name contains invalid control characters")
+        return value
+
+
+class RenameFolderRequest(BaseModel):
+    """Request to rename an existing mailbox folder."""
+
+    name: str = Field(..., min_length=1, max_length=255, description="New folder name")
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        """Apply the same provider-safe validation as folder creation."""
+        return CreateFolderRequest(name=value).name
 
 
 class MailAddress(BaseModel):
-    name: str | None = None
-    address: EmailStr
+    """A validated email address with an optional display name."""
+
+    name: str | None = Field(default=None, description="Display name")
+    address: EmailStr = Field(..., description="RFC-compatible email address")
 
 
 class MailAttachment(BaseModel):
-    part_id: str
-    filename: str
-    content_type: str
-    size: int
-    inline: bool = False
-    content_id: str | None = None
+    """Attachment metadata; content is downloaded from a separate endpoint."""
+
+    part_id: str = Field(..., min_length=1, description="Provider MIME part identifier")
+    filename: str = Field(..., min_length=1, description="Original filename")
+    content_type: str = Field(..., min_length=1, description="MIME content type")
+    size: int = Field(..., ge=0, description="Decoded attachment size in bytes")
+    inline: bool = Field(default=False, description="Whether the part is inline")
+    content_id: str | None = Field(default=None, description="MIME Content-ID")
 
 
 class MailMessageSummary(BaseModel):
-    uid: int
-    message_id: str | None = None
-    subject: str = ""
-    sender: MailAddress | None = None
-    recipients: list[MailAddress] = Field(default_factory=list)
-    sent_at: datetime | None = None
-    flags: list[MailFlag] = Field(default_factory=list)
-    size: int = 0
-    has_attachments: bool = False
+    """Message metadata used by mailbox list views."""
+
+    uid: int = Field(..., ge=1, description="Folder-scoped IMAP UID")
+    message_id: str | None = Field(default=None, description="RFC Message-ID")
+    subject: str = Field(default="", description="Decoded subject")
+    sender: MailAddress | None = Field(default=None, description="Sender")
+    recipients: list[MailAddress] = Field(
+        default_factory=list, description="To recipients"
+    )
+    sent_at: datetime | None = Field(default=None, description="Date header timestamp")
+    flags: list[MailFlag] = Field(default_factory=list, description="Normalized flags")
+    size: int = Field(default=0, ge=0, description="Message size in bytes")
+    has_attachments: bool = Field(default=False, description="Attachment indicator")
 
 
 class MailMessage(MailMessageSummary):
+    """Complete message content returned by the detail endpoint."""
+
     cc: list[MailAddress] = Field(default_factory=list)
     reply_to: list[MailAddress] = Field(default_factory=list)
     text_body: str | None = None
@@ -55,13 +100,17 @@ class MailMessage(MailMessageSummary):
 
 
 class MailMessagePage(BaseModel):
-    messages: list[MailMessageSummary]
-    total: int
-    offset: int
-    limit: int
+    """Offset-based message page suitable for IMAP UID result sets."""
+
+    messages: list[MailMessageSummary] = Field(description="Messages in this page")
+    total: int = Field(..., ge=0, description="Total matching messages")
+    offset: int = Field(..., ge=0, description="Applied result offset")
+    limit: int = Field(..., ge=1, le=200, description="Applied page limit")
 
 
 class SendMailRequest(BaseModel):
+    """Validated message composition request."""
+
     to: list[EmailStr] = Field(min_length=1)
     cc: list[EmailStr] = Field(default_factory=list)
     bcc: list[EmailStr] = Field(default_factory=list)
@@ -79,18 +128,26 @@ class SendMailRequest(BaseModel):
 
 
 class MoveMailRequest(BaseModel):
+    """Request to move a message into another existing folder."""
+
     destination: str = Field(min_length=1, max_length=255)
 
 
 class UpdateFlagsRequest(BaseModel):
+    """Flags to add to or remove from a message."""
+
     add: list[MailFlag] = Field(default_factory=list)
     remove: list[MailFlag] = Field(default_factory=list)
 
 
 class SendMailResponse(BaseModel):
-    message_id: str
+    """Identity assigned to a successfully submitted outgoing message."""
+
+    message_id: str = Field(..., min_length=1, description="Generated RFC Message-ID")
 
 
 class MailStatus(BaseModel):
-    configured: bool
-    provider: str
+    """Non-sensitive mailbox adapter configuration status."""
+
+    configured: bool = Field(description="Whether required mailbox settings exist")
+    provider: str = Field(..., min_length=1, description="Configured adapter name")
