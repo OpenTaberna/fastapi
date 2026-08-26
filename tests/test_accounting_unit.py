@@ -37,8 +37,10 @@ def test_document_list_forwards_admin_filters() -> None:
     )
 
     assert response.status_code == 200
+    # "query", not "text": Paperless has no `text` filter and ignores unknown
+    # names, so the old value made every search return the whole collection.
     operations.list_documents.assert_awaited_once_with(
-        {"page": 1, "page_size": 25, "text": "invoice", "tags__id__all": "2,3"}
+        {"page": 1, "page_size": 25, "query": "invoice", "tags__id__all": "2,3"}
     )
 
 

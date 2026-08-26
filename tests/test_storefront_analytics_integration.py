@@ -299,7 +299,10 @@ def test_add_to_cart_rate_is_reported_per_sku():
         ]
     )
 
-    payload = requests.get(FUNNEL_URL, headers=_HEADERS).json()
+    # A wide limit rather than the default ten: on a shop with real traffic a
+    # two-view fixture SKU will never reach a top-ten list, and the assertion
+    # is about the rate, not about ranking.
+    payload = requests.get(FUNNEL_URL, headers=_HEADERS, params={"limit": 200}).json()
     row = next(p for p in payload["product_interest"] if p["sku"] == sku)
 
     assert row["sessions_viewed"] == 2
