@@ -14,6 +14,7 @@ from app.services.customers import customers_api_router
 from app.services.fulfillment import fulfillment_api_router
 from app.services.health import health_api_router
 from app.services.inventory import inventory_api_router
+from app.services.mail import mail_api_router
 from app.services.orders import orders_api_router, webhooks_api_router
 from app.services.returns import admin_returns_api_router, returns_api_router
 from app.services.storefront_analytics import storefront_analytics_api_router
@@ -166,6 +167,9 @@ app.include_router(fulfillment_api_router, prefix="/v1")
 # Include returns service routers (Phase 4.4)
 app.include_router(returns_api_router, prefix="/v1")
 app.include_router(admin_returns_api_router, prefix="/v1")
+
+# Provider-neutral mailbox endpoints for the admin webmail client
+app.include_router(mail_api_router, prefix="/v1")
 
 # Include health check endpoints (Phase 4.1)
 app.include_router(health_api_router)
