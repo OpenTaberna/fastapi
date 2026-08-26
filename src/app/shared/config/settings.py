@@ -207,6 +207,19 @@ class Settings(BaseSettings):
         description="Envelope sender address for outgoing emails",
     )
 
+    # Admin mailbox (standard IMAP + SMTP; compatible with hosted and self-hosted mail)
+    mail_provider: str = Field(default="imap_smtp", description="Mailbox adapter")
+    mail_imap_host: str = Field(default="", description="IMAP server hostname")
+    mail_imap_port: int = Field(default=993, description="IMAP server port")
+    mail_imap_ssl: bool = Field(default=True, description="Use implicit TLS for IMAP")
+    mail_smtp_host: str = Field(default="", description="Mailbox SMTP hostname")
+    mail_smtp_port: int = Field(default=587, description="Mailbox SMTP port")
+    mail_smtp_starttls: bool = Field(default=True, description="Use SMTP STARTTLS")
+    mail_username: str = Field(default="", description="Mailbox login name")
+    mail_password: str = Field(default="", description="Mailbox password/app password")
+    mail_from: str = Field(default="", description="From address; defaults to username")
+    mail_timeout_seconds: int = Field(default=30, description="Mail server timeout")
+
     # Feature Flags
     feature_webhooks_enabled: bool = Field(default=False, description="Enable webhooks")
 
