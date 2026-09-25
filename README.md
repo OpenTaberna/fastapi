@@ -35,6 +35,12 @@ The development stack also starts a Stripe CLI listener. Set a Stripe test-mode
 the API and provides its generated webhook signing secret automatically. No
 manual `stripe listen` process or `STRIPE_WEBHOOK_SECRET` copy is required.
 
+Object storage is [Garage](https://garagehq.deuxfleurs.fr), an S3-compatible store
+(MinIO's images are no longer published). It needs `GARAGE_RPC_SECRET` in `.env` —
+generate one with `openssl rand -hex 32`. On start it creates its access key from
+`STORAGE_ACCESS_KEY`/`STORAGE_SECRET_KEY`; the API creates its buckets itself. The S3
+API is on `http://localhost:9000`, its health check on `http://localhost:3903/health`.
+
 # Pipelines
 
 This FastAPI can be build and tested via GitHub workflows. There are two available workflows:

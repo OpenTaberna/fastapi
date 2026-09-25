@@ -248,18 +248,18 @@ class Settings(BaseSettings):
         description="How long (in minutes) a stock reservation is held before it expires",
     )
 
-    # MinIO / S3 object storage
+    # S3-compatible object storage (Garage in the dev stack)
     storage_endpoint_url: str = Field(
         default="http://localhost:9000",
-        description="S3-compatible storage endpoint URL (MinIO or AWS S3)",
+        description="S3-compatible storage endpoint URL",
     )
     storage_access_key: str = Field(
         default="opentaberna",
-        description="Storage access key ID (MinIO root user or AWS access key)",
+        description="Storage access key ID",
     )
     storage_secret_key: str = Field(
         default="opentaberna_secret",
-        description="Storage secret access key (MinIO root password or AWS secret key)",
+        description="Storage secret access key",
     )
     storage_bucket_items: str = Field(
         default="item-images",
@@ -278,7 +278,7 @@ class Settings(BaseSettings):
     )
     storage_region: str = Field(
         default="us-east-1",
-        description="Storage region (MinIO ignores this; required by boto3 client)",
+        description="Storage region; must match the store's configured region",
     )
 
     # DHL Parcel DE REST API
