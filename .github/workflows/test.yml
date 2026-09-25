@@ -209,6 +209,9 @@ jobs:
         run: |
           uv sync --extra dev
 
+      - name: 📄 Community files
+        run: test -f CODE_OF_CONDUCT.md && test -f CONTRIBUTING.md && test -f .github/CODEOWNERS
+
       - name: 🔍 Run Ruff linting
         run: |
           source .venv/bin/activate

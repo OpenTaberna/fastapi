@@ -35,6 +35,10 @@ The development stack also starts a Stripe CLI listener. Set a Stripe test-mode
 the API and provides its generated webhook signing secret automatically. No
 manual `stripe listen` process or `STRIPE_WEBHOOK_SECRET` copy is required.
 
+# Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 # Pipelines
 
 This FastAPI can be build and tested via GitHub workflows. There are two available workflows:
