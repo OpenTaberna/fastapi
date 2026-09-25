@@ -28,14 +28,14 @@ to it directly. Everyone else goes through a pull request:
 ## Before you open the PR
 
 Run the same checks locally so CI has no surprises (integration tests also need the API
-running — see Dev Setup in the [README](README.md)):
+running, and `.env` needs `GARAGE_RPC_SECRET` — see Dev Setup in the [README](README.md)):
 
 ```sh
 uv sync --extra test --extra dev
 uv run ruff check src/ tests/
 uv run ruff format --check src/ tests/
 docker compose -f docker-compose.dev.yml up -d \
-  opentaberna-db opentaberna-redis opentaberna-keycloak opentaberna-minio
+  opentaberna-db opentaberna-redis opentaberna-keycloak opentaberna-garage
 uv run pytest tests/ -m "not integration and not slow"
 ```
 
