@@ -201,17 +201,17 @@ could otherwise drive the back office.
 | `smtp_password` | str | Empty | SMTP password |
 | `email_from` | str | `noreply@opentaberna.local` | Envelope sender address |
 
-### Object Storage (MinIO / S3)
+### Object Storage (S3-compatible)
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `storage_endpoint_url` | str | `http://localhost:9000` | S3-compatible endpoint |
-| `storage_access_key` | str | `minioadmin` | Access key |
-| `storage_secret_key` | str | `minioadmin` | Secret key |
-| `storage_bucket_labels` | str | `labels` | Bucket holding carrier labels |
+| `storage_access_key` | str | `opentaberna` | Access key |
+| `storage_secret_key` | str | `opentaberna_secret` | Secret key |
+| `storage_bucket_labels` | str | `shipping-labels` | Bucket holding carrier labels |
 | `storage_bucket_items` | str | `item-images` | Bucket holding product images |
 | `storage_max_image_bytes` | int | `5242880` | Largest product image accepted (5 MB) |
-| `storage_region` | str | `us-east-1` | Region name |
+| `storage_region` | str | `us-east-1` | Region name; must match the store's region (`s3_region` in `docker/garage/garage.toml`) |
 
 ### DHL (Carrier Adapter)
 

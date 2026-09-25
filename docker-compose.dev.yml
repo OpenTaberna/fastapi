@@ -10,7 +10,7 @@ services:
       REDIS_URL: redis://opentaberna-redis:6379/0
       KEYCLOAK_URL: http://opentaberna-keycloak:8080
       KEYCLOAK_PUBLIC_URL: http://localhost:8080
-      STORAGE_ENDPOINT_URL: http://opentaberna-minio:9000
+      STORAGE_ENDPOINT_URL: http://opentaberna-garage:3900
       OTEL_EXPORTER_OTLP_ENDPOINT: http://opentaberna-otel-collector:4318
       OTEL_SERVICE_NAME: opentaberna-api
       PAPERLESS_URL: http://opentaberna-paperless:8000
@@ -33,7 +33,7 @@ services:
         condition: service_started
       opentaberna-keycloak:
         condition: service_started
-      opentaberna-minio:
+      opentaberna-garage:
         condition: service_started
       opentaberna-stripe-listener:
         condition: service_started
@@ -153,25 +153,30 @@ services:
       retries: 10
       start_period: 60s
 
-  opentaberna-minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
+  opentaberna-garage:
+    image: dxflrs/garage:v2.4.1
+    # --single-node lays out a one-node cluster and --default-access-key creates
+    # the API's key on start, so the store needs no manual setup. The API
+    # creates its buckets itself.
+    command: /garage server --single-node --default-access-key
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-opentaberna}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-opentaberna_secret}
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?set GARAGE_RPC_SECRET in .env, generate one with openssl rand -hex 32}
+      GARAGE_DEFAULT_ACCESS_KEY: ${STORAGE_ACCESS_KEY:-opentaberna}
+      GARAGE_DEFAULT_SECRET_KEY: ${STORAGE_SECRET_KEY:-opentaberna_secret}
     volumes:
-      - ./minio_data:/data
+      - ./docker/garage/garage.toml:/etc/garage.toml:ro
+      - ./garage_data:/var/lib/garage
     ports:
-      - "9000:9000"   # S3 API
-      - "9001:9001"   # MinIO Web Console
+      - "9000:3900"   # S3 API
+      - "3903:3903"   # Admin API (GET /health)
     restart: unless-stopped
-    container_name: opentaberna-minio
+    container_name: opentaberna-garage
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9000/minio/health/live || exit 1"]
+      test: ["CMD", "/garage", "status"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 20s
+      start_period: 10s
 
   opentaberna-worker:
     build:
@@ -182,7 +187,7 @@ services:
     env_file: .env
     environment:
       REDIS_URL: redis://opentaberna-redis:6379/0
-      STORAGE_ENDPOINT_URL: http://opentaberna-minio:9000
+      STORAGE_ENDPOINT_URL: http://opentaberna-garage:3900
       OTEL_EXPORTER_OTLP_ENDPOINT: http://opentaberna-otel-collector:4318
       OTEL_SERVICE_NAME: opentaberna-worker
     restart: unless-stopped
@@ -198,7 +203,7 @@ services:
         condition: service_healthy
       opentaberna-redis:
         condition: service_healthy
-      opentaberna-minio:
+      opentaberna-garage:
         condition: service_healthy
 
   opentaberna-mail:
