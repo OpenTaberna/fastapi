@@ -41,6 +41,10 @@ generate one with `openssl rand -hex 32`. On start it creates its access key fro
 `STORAGE_ACCESS_KEY`/`STORAGE_SECRET_KEY`; the API creates its buckets itself. The S3
 API is on `http://localhost:9000`, its health check on `http://localhost:3903/health`.
 
+# Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 # Pipelines
 
 This FastAPI can be build and tested via GitHub workflows. There are two available workflows:
